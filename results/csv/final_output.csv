@@ -1,0 +1,16 @@
+filename,merchant,normalized_merchant,total
+Test_Image_01.json,,,24050.0
+Test_Image_02.json,GS25S마들역점,GS25S마들역점,3680.0
+Test_Image_03.json,PID 인천 구월로데오광장점,PID 인천 구월로데오광장점,512000.0
+Test_image_04.json,,,12400.0
+Test_image_05.json,(유)아웃백스테이크하우스코리아 신대방점,(유)아웃백스테이크하우스코리아 신대방점,20300.0
+Train_image_01.json,세븐일레븐,세븐일레븐,13820.0
+Train_image_02.json,이마트 탄현점,이마트 탄현점,27600.0
+Train_image_03.json,CU을지로파인애비뉴점,CU을지로파인애비뉴점,2000.0
+Train_image_04.json,re-MART,re-MART,22000.0
+Train_image_05.json,현. 스시,현. 스시,334000.0
+Train_image_06.json,,,4600.0
+Train_image_07.json,,,12400.0
+Train_image_08.json,카,카,8200.0
+Train_image_09.json,STARBUCKS,STARBUCKS,4500.0
+Train_image_10.json,이마트 충주점,이마트 충주점,92170.0
