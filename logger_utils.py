@@ -18,6 +18,7 @@ def setup_logger(name, log_dir='./logs'):
         fh = logging.FileHandler(log_path)
         formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
         fh.setFormatter(formatter)
+        
         logger.addHandler(fh)
 
     return logger
