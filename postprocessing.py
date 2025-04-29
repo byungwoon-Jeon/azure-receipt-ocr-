@@ -1,74 +1,98 @@
 import os
-import json
 import csv
 import pandas as pd
-from logger_utils import setup_logger
+from utils import setup_logger, ensure_dir, load_json
 
-# 로그 설정
+# 로깅 설정
 logger = setup_logger('postprocessing')
 
-def ensure_dir(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
-        logger.info(f"Created directory: {path}")
-
+# 룩업 테이블 로드
 def load_lookup_table(path):
-    """룩업 테이블 로드"""
+    """
+    상호명 정규화를 위한 룩업 테이블 로드
+
+    Args:
+        path (str): CSV 파일 경로 (컬럼: original_name, normalized_name)
+        
+    Returns:
+        dict: original_name -> normalized_name 매핑 딕셔너리
+    """
     try:
         df = pd.read_csv(path)
         lookup_dict = dict(zip(df['original_name'], df['normalized_name']))
-        logger.info(f"Loaded lookup table: {path}")
+        logger.info(f"[성공] 룩업 테이블 로드 완료: {path}")
         return lookup_dict
     except Exception as e:
-        logger.error(f"Error loading lookup table: {e}")
+        logger.error(f"[에러] 룩업 테이블 로드 실패 : {e}")
         return {}
-
+    
+# JSON 데이터에서 필드 추출
 def extract_fields(json_data):
-    """JSON에서 필요한 필드 추출"""
+    """
+    OCR 결과 JSON에서 주요 필드 추출
+
+    Args:
+        json_data (dict): OCR 결과
+        
+    Returns:
+    tuple: (merchant_name, total_price)
+    """
     try:
-        fields = json_data.get('documents', [])[0]['fields']
+        fields = json_data.get('documents', [])[0].get('fields', {})
         merchant = fields.get('MerchantName', {}).get('value', '')
         total = fields.get('Total', {}).get('value', '')
         return merchant, total
     except Exception as e:
-        logger.error(f"Error extracting fields: {e}")
+        logger.warning(f"[경고] 필드 추출 실패: {e}")
         return '', ''
-
+    
+# 폴더 전체 결과 후처리
 def process_folder(input_dir, output_csv, lookup_table):
-    ensure_dir(os.path.dirname(output_csv))
+    """
+    OCR JSON 결과들을 정제하고 CSV로 저장
 
-    rows = []
-    for filename in os.listdir(input_dir):
-        if filename.endswith('.json'):
-            input_path = os.path.join(input_dir, filename)
-            try:
-                with open(input_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+    Args:
+        input_dir (str): JSON 파일 폴더
+        output_csv (str): 결과 CSV 저장 경로
+        lookup_table (dict): 상호명 정규화 룩업 테이블
+    """
+    try:
+        ensure_dir(os.path.dirname(output_csv), logger)
+        rows = []
+        
+        for filename in os.listdir(input_dir):
+            if filename.endswith('.json'):
+                json_path = os.path.join(input_dir, filename)
+                data = load_json(json_path, logger)
+                
+                if data is None:
+                    logger.warning(f"[스킵] JSON 로드 실패: {filename}")
+                    continue
+                
                 merchant, total = extract_fields(data)
-
-                # 룩업 테이블 적용
                 normalized_merchant = lookup_table.get(merchant, merchant)
-
+                
                 rows.append({
-                    'filename': filename,
-                    'merchant': merchant,
-                    'normalized_merchant': normalized_merchant,
-                    'total': total
+                    'filename' : filename,
+                    'merchant' : merchant,
+                    'normalized_merchant' : normalized_merchant,
+                    'total':total   
                 })
+                logger.info(f"[처리] {filename}->상호: {merchant}, 금액: {total}")
+        # CSV 저장
+        with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['filename', 'merchant', 'normalized_merchant', 'total']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow(rows)
+        logger.info(f"[완료] CSV 저장 완료: {output_csv}")
+        
+    except Exception as e:
+        logger.exception(f"[예외] 폴더 후처리 중 오류 발생: {e}")
 
-                logger.info(f"Processed {filename}")
-
-            except Exception as e:
-                logger.error(f"Error processing {filename}: {e}")
-
-    # CSV 저장
-    with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['filename', 'merchant', 'normalized_merchant', 'total']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-        logger.info(f"Saved CSV: {output_csv}")
-
+# =============================================
+# 단독 실행 진입점
+# =============================================
 if __name__ == "__main__":
-    lookup_table = load_lookup_table('./lookup_table.csv')
-    process_folder('./results/json', './results/csv/final_output.csv', lookup_table)
+    lookup = load_lookup_table('./lookup_table.csv')
+    process_folder('./results/json', './results/csv/final_output.csv', lookup)

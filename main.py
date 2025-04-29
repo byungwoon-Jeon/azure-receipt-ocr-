@@ -1,7 +1,7 @@
 from preprocessing import preprocess_folder
 from azure_client import AzureReceiptClient
 from postprocessing import load_lookup_table, process_folder
-from logger_utils import setup_logger
+from utils import setup_logger
 import os
 
 # 로그 설정
