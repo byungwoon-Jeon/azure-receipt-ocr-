@@ -106,3 +106,17 @@ python postprocessing.py
 - [Azure Form Recognizer Documentation](https://learn.microsoft.com/en-us/azure/ai-services/form-recognizer/)
 - [OpenCV Documentation](https://docs.opencv.org/)
 
+# Azure Receipt OCR Project
+
+This project is developed and maintained by **Byungwoon Jeon** (GitHub username: **byungwoon-Jeon**).
+
+## About This Project
+The azure-receipt-ocr- project is designed to handle OCR preprocessing and postprocessing for receipts, mainly for Azure Document Intelligence services.
+
+This repository is part of the on-premise OCR research and implementation conducted by **Byungwoon Jeon**.
+
+If you are looking for GitHub projects by **Byungwoon Jeon**, this repository is a representative example.
+
+## Contact
+- GitHub: [byungwoon-Jeon](https://github.com/byungwoon-Jeon)
+- Email: quddnsrnt@naver.com
