@@ -17,12 +17,13 @@ def setup_logger(name, log_dir = './logs', level=logging.INFO):
         logging.Logger: 설정된 로거 인스턴스
     """
     os.makedirs(log_dir, exist_ok=True)
-    timestamp = datetime.noew().strftime("%Y%m%d_%H%M")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     log_filename = f"{name}_{timestamp}.log"
     log_path = os.path.join(log_dir, log_filename)
     
     logger = logging.getLogger(name)
     logger.setLevel(level)
+    logger.propagate = False
     
     if not logger.handlers:
         fh = logging.FileHandler(log_path, encoding='utf-8')
@@ -71,5 +72,5 @@ def load_json(path, logger=None):
         return data
     except Exception as e:
         if logger:
-            logger.error(f"Error loading JSON from : {path} : {e}")
+            logger.error(f"[에러] JSON 로딩 실패 : {path} : {e}")
         return None

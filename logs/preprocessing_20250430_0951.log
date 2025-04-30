@@ -1,0 +1,16 @@
+2025-04-30 09:51:49,408 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Test_Image_01.png
+2025-04-30 09:51:49,479 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Test_Image_02.png
+2025-04-30 09:51:49,507 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Test_Image_03.png
+2025-04-30 09:51:49,575 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Test_image_04.png
+2025-04-30 09:51:49,625 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Test_image_05.png
+2025-04-30 09:51:49,656 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Train_image_01.png
+2025-04-30 09:51:49,676 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Train_image_02.png
+2025-04-30 09:51:49,692 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Train_image_03.png
+2025-04-30 09:51:49,733 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Train_image_04.png
+2025-04-30 09:51:49,751 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Train_image_05.png
+2025-04-30 09:51:49,769 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Train_image_06.png
+2025-04-30 09:51:49,794 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Train_image_07.png
+2025-04-30 09:51:49,823 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Train_image_08.png
+2025-04-30 09:51:49,842 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Train_image_09.png
+2025-04-30 09:51:49,869 - INFO - [완료] 전처리 및 저장 완료: ./processed_images\Train_image_10.png
+2025-04-30 09:51:49,870 - INFO - [완료] 전체 폴더 전처리 완료: ./input_images -> ./processed_images

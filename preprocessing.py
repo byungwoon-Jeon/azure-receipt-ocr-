@@ -42,10 +42,14 @@ def preprocess_image(input_path, output_dir, target_size=(1024, 1024)):
         )
         
         # 저장
-        base_filename = os.path.split(os.path.basename(input_path))[0]
+        base_filename = os.path.splitext(os.path.basename(input_path))[0]
         output_path = os.path.join(output_dir, f"{base_filename}.png")
-        cv2.imwrite(output_path, padded)
-        logger.info(f"[완료] 전처리 및 저장 완료: {output_path}")
+        
+        success = cv2.imwrite(output_path, padded)
+        if success:
+            logger.info(f"[완료] 전처리 및 저장 완료: {output_path}")    
+        else:
+            logger.error(f"[에러] 이미지 저장 실패: {output_path}")
         
     except Exception as e:
         logger.error(f"[에러] {input_path} 처리 중 예외 발생: {e}")
@@ -67,7 +71,7 @@ def preprocess_folder(input_dir, output_dir, target_size=(1024, 1024)):
         files = os.listdir(input_dir)
         for filename in files:
             if is_image_file(filename):
-                input_path = os.path.join(output_dir, filename)
+                input_path = os.path.join(input_dir, filename)
                 preprocess_image(input_path, output_dir, target_size)
         
         logger.info(f"[완료] 전체 폴더 전처리 완료: {input_dir} -> {output_dir}")

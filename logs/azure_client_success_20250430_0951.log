@@ -1,0 +1,47 @@
+2025-04-30 09:51:49,898 - INFO - [성공] Azure 클라이언트 초기화 완료
+2025-04-30 09:51:53,513 - INFO - [성공] 분석 완료 : ./processed_images\Test_Image_01.png
+2025-04-30 09:51:53,513 - INFO - [정보] 분석 소요 시간: 3.21초
+2025-04-30 09:51:53,527 - INFO - Saved JSON: ./results/json\Test_Image_01.json
+2025-04-30 09:51:56,837 - INFO - [성공] 분석 완료 : ./processed_images\Test_Image_02.png
+2025-04-30 09:51:56,838 - INFO - [정보] 분석 소요 시간: 3.17초
+2025-04-30 09:51:56,877 - INFO - Saved JSON: ./results/json\Test_Image_02.json
+2025-04-30 09:52:00,215 - INFO - [성공] 분석 완료 : ./processed_images\Test_Image_03.png
+2025-04-30 09:52:00,216 - INFO - [정보] 분석 소요 시간: 3.19초
+2025-04-30 09:52:00,265 - INFO - Saved JSON: ./results/json\Test_Image_03.json
+2025-04-30 09:52:03,599 - INFO - [성공] 분석 완료 : ./processed_images\Test_image_04.png
+2025-04-30 09:52:03,599 - INFO - [정보] 분석 소요 시간: 3.13초
+2025-04-30 09:52:03,608 - INFO - Saved JSON: ./results/json\Test_image_04.json
+2025-04-30 09:52:06,959 - INFO - [성공] 분석 완료 : ./processed_images\Test_image_05.png
+2025-04-30 09:52:06,959 - INFO - [정보] 분석 소요 시간: 3.17초
+2025-04-30 09:52:06,974 - INFO - Saved JSON: ./results/json\Test_image_05.json
+2025-04-30 09:52:10,317 - INFO - [성공] 분석 완료 : ./processed_images\Train_image_01.png
+2025-04-30 09:52:10,317 - INFO - [정보] 분석 소요 시간: 3.17초
+2025-04-30 09:52:10,330 - INFO - Saved JSON: ./results/json\Train_image_01.json
+2025-04-30 09:52:50,674 - INFO - [성공] 분석 완료 : ./processed_images\Train_image_02.png
+2025-04-30 09:52:50,675 - INFO - [정보] 분석 소요 시간: 40.17초
+2025-04-30 09:52:50,690 - INFO - Saved JSON: ./results/json\Train_image_02.json
+2025-04-30 09:52:53,923 - INFO - [성공] 분석 완료 : ./processed_images\Train_image_03.png
+2025-04-30 09:52:53,923 - INFO - [정보] 분석 소요 시간: 3.10초
+2025-04-30 09:52:53,932 - INFO - Saved JSON: ./results/json\Train_image_03.json
+2025-04-30 09:52:57,161 - INFO - [성공] 분석 완료 : ./processed_images\Train_image_04.png
+2025-04-30 09:52:57,163 - INFO - [정보] 분석 소요 시간: 3.14초
+2025-04-30 09:52:57,171 - INFO - Saved JSON: ./results/json\Train_image_04.json
+2025-04-30 09:53:00,438 - INFO - [성공] 분석 완료 : ./processed_images\Train_image_05.png
+2025-04-30 09:53:00,438 - INFO - [정보] 분석 소요 시간: 3.16초
+2025-04-30 09:53:00,453 - INFO - Saved JSON: ./results/json\Train_image_05.json
+2025-04-30 09:53:03,725 - INFO - [성공] 분석 완료 : ./processed_images\Train_image_06.png
+2025-04-30 09:53:03,726 - INFO - [정보] 분석 소요 시간: 3.17초
+2025-04-30 09:53:03,737 - INFO - Saved JSON: ./results/json\Train_image_06.json
+2025-04-30 09:53:07,046 - INFO - [성공] 분석 완료 : ./processed_images\Train_image_07.png
+2025-04-30 09:53:07,047 - INFO - [정보] 분석 소요 시간: 3.13초
+2025-04-30 09:53:07,055 - INFO - Saved JSON: ./results/json\Train_image_07.json
+2025-04-30 09:53:10,368 - INFO - [성공] 분석 완료 : ./processed_images\Train_image_08.png
+2025-04-30 09:53:10,369 - INFO - [정보] 분석 소요 시간: 3.14초
+2025-04-30 09:53:10,383 - INFO - Saved JSON: ./results/json\Train_image_08.json
+2025-04-30 09:53:50,727 - INFO - [성공] 분석 완료 : ./processed_images\Train_image_09.png
+2025-04-30 09:53:50,728 - INFO - [정보] 분석 소요 시간: 40.22초
+2025-04-30 09:53:50,752 - INFO - Saved JSON: ./results/json\Train_image_09.json
+2025-04-30 09:53:54,130 - INFO - [성공] 분석 완료 : ./processed_images\Train_image_10.png
+2025-04-30 09:53:54,131 - INFO - [정보] 분석 소요 시간: 3.20초
+2025-04-30 09:53:54,161 - INFO - Saved JSON: ./results/json\Train_image_10.json
+2025-04-30 09:53:54,162 - INFO - [완료] 폴더 분석 및 저장 완료 : ./processed_images -> ./results/json

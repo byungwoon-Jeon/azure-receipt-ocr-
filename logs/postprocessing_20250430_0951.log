@@ -1,0 +1,47 @@
+2025-04-30 09:53:54,174 - INFO - [성공] 룩업 테이블 로드 완료: ./lookup_table.csv
+2025-04-30 09:53:54,185 - INFO - Loaded JSON: ./results/json\Test_Image_01.json
+2025-04-30 09:53:54,185 - WARNING - [경고] 정규화 미일치 : 
+2025-04-30 09:53:54,186 - INFO - [처리] Test_Image_01.json->상호: , 금액: 24050.0
+2025-04-30 09:53:54,196 - INFO - Loaded JSON: ./results/json\Test_Image_02.json
+2025-04-30 09:53:54,197 - WARNING - [경고] 정규화 미일치 : GS25S마들역점
+2025-04-30 09:53:54,198 - INFO - [처리] Test_Image_02.json->상호: GS25S마들역점, 금액: 3680.0
+2025-04-30 09:53:54,209 - INFO - Loaded JSON: ./results/json\Test_Image_03.json
+2025-04-30 09:53:54,210 - WARNING - [경고] 정규화 미일치 : PID 인천 구월로데오광장점
+2025-04-30 09:53:54,210 - INFO - [처리] Test_Image_03.json->상호: PID 인천 구월로데오광장점, 금액: 512000.0
+2025-04-30 09:53:54,220 - INFO - Loaded JSON: ./results/json\Test_image_04.json
+2025-04-30 09:53:54,221 - WARNING - [경고] 정규화 미일치 : 
+2025-04-30 09:53:54,221 - INFO - [처리] Test_image_04.json->상호: , 금액: 12400.0
+2025-04-30 09:53:54,230 - INFO - Loaded JSON: ./results/json\Test_image_05.json
+2025-04-30 09:53:54,230 - WARNING - [경고] 정규화 미일치 : (유)아웃백스테이크하우스코리아 신대방점
+2025-04-30 09:53:54,231 - INFO - [처리] Test_image_05.json->상호: (유)아웃백스테이크하우스코리아 신대방점, 금액: 20300.0
+2025-04-30 09:53:54,249 - INFO - Loaded JSON: ./results/json\Train_image_01.json
+2025-04-30 09:53:54,250 - WARNING - [경고] 정규화 미일치 : 세븐일레븐
+2025-04-30 09:53:54,250 - INFO - [처리] Train_image_01.json->상호: 세븐일레븐, 금액: 13820.0
+2025-04-30 09:53:54,259 - INFO - Loaded JSON: ./results/json\Train_image_02.json
+2025-04-30 09:53:54,259 - WARNING - [경고] 정규화 미일치 : 이마트 탄현점
+2025-04-30 09:53:54,259 - INFO - [처리] Train_image_02.json->상호: 이마트 탄현점, 금액: 27600.0
+2025-04-30 09:53:54,270 - INFO - Loaded JSON: ./results/json\Train_image_03.json
+2025-04-30 09:53:54,270 - WARNING - [경고] 정규화 미일치 : CU을지로파인애비뉴점
+2025-04-30 09:53:54,271 - INFO - [처리] Train_image_03.json->상호: CU을지로파인애비뉴점, 금액: 2000.0
+2025-04-30 09:53:54,280 - INFO - Loaded JSON: ./results/json\Train_image_04.json
+2025-04-30 09:53:54,281 - WARNING - [경고] 정규화 미일치 : re-MART
+2025-04-30 09:53:54,281 - INFO - [처리] Train_image_04.json->상호: re-MART, 금액: 22000.0
+2025-04-30 09:53:54,310 - INFO - Loaded JSON: ./results/json\Train_image_05.json
+2025-04-30 09:53:54,310 - WARNING - [경고] 정규화 미일치 : 현. 스시
+2025-04-30 09:53:54,311 - INFO - [처리] Train_image_05.json->상호: 현. 스시, 금액: 334000.0
+2025-04-30 09:53:54,322 - INFO - Loaded JSON: ./results/json\Train_image_06.json
+2025-04-30 09:53:54,322 - WARNING - [경고] 정규화 미일치 : 
+2025-04-30 09:53:54,322 - INFO - [처리] Train_image_06.json->상호: , 금액: 4600.0
+2025-04-30 09:53:54,331 - INFO - Loaded JSON: ./results/json\Train_image_07.json
+2025-04-30 09:53:54,332 - WARNING - [경고] 정규화 미일치 : 
+2025-04-30 09:53:54,332 - INFO - [처리] Train_image_07.json->상호: , 금액: 12400.0
+2025-04-30 09:53:54,342 - INFO - Loaded JSON: ./results/json\Train_image_08.json
+2025-04-30 09:53:54,344 - WARNING - [경고] 정규화 미일치 : 카
+2025-04-30 09:53:54,344 - INFO - [처리] Train_image_08.json->상호: 카, 금액: 8200.0
+2025-04-30 09:53:54,356 - INFO - Loaded JSON: ./results/json\Train_image_09.json
+2025-04-30 09:53:54,356 - WARNING - [경고] 정규화 미일치 : STARBUCKS
+2025-04-30 09:53:54,356 - INFO - [처리] Train_image_09.json->상호: STARBUCKS, 금액: 4500.0
+2025-04-30 09:53:54,408 - INFO - Loaded JSON: ./results/json\Train_image_10.json
+2025-04-30 09:53:54,408 - WARNING - [경고] 정규화 미일치 : 이마트 충주점
+2025-04-30 09:53:54,409 - INFO - [처리] Train_image_10.json->상호: 이마트 충주점, 금액: 92170.0
+2025-04-30 09:53:54,409 - INFO - [완료] CSV 저장 완료: ./results/csv/final_output.csv

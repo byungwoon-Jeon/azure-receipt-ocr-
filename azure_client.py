@@ -9,12 +9,13 @@ from datetime import datetime
 load_dotenv()
 
 # 설정값
-ENDPOINT = os.getenv("AZURE_FROM_RECOGNIZER_ENDPOINT")
-KEY = os.getenv("AZURE_FROM_RECOGNIZER_KEY")
+ENDPOINT = os.getenv("AZURE_FORM_RECOGNIZER_ENDPOINT")
+KEY = os.getenv("AZURE_FORM_RECOGNIZER_KEY")
 LOG_DIR = './logs'
 
 # 로거 설정
-logger = setup_logger('azure_client', log_dir=LOG_DIR)
+success_logger = setup_logger('azure_client_success', log_dir=LOG_DIR)
+fail_logger = setup_logger('azure_client_failed', log_dir=LOG_DIR)
 
 # Azure 클라이언트 클래스
 class AzureReceiptClient:
@@ -25,9 +26,9 @@ class AzureReceiptClient:
                 endpoint=ENDPOINT,
                 credential=AzureKeyCredential(KEY)
             )
-            logger.info("[성공] Azure 클라이언트 초기화 완료")
+            success_logger.info("[성공] Azure 클라이언트 초기화 완료")
         except Exception as e:
-            logger.exception(f"[실패] Azure 클라이언트 초기화 실패: {e}")
+            fail_logger.exception(f"[실패] Azure 클라이언트 초기화 실패: {e}")
             raise e
     
     def analyze_receipt(self, image_path):
@@ -43,11 +44,14 @@ class AzureReceiptClient:
         try:
             with open(image_path, "rb") as f:
                 poller = self.client.begin_analyze_document("prebuilt-receipt", document=f)
+                start_time = datetime.now()
                 result = poller.result()
-                logger.info(f"[성공] 분석 완료 : {image_path}")
+                elpased = (datetime.now() - start_time).total_seconds()
+                success_logger.info(f"[성공] 분석 완료 : {image_path}")
+                success_logger.info(f"[정보] 분석 소요 시간: {elpased:.2f}초")
                 return result.to_dict()
         except Exception as e:
-            logger.error(f"[실패] 분석 실패: {image_path} - {e}")
+            fail_logger.error(f"[실패] 분석 실패: {image_path} - {e}")
             return None
     
     def analyze_folder(self, input_dir, output_dir):
@@ -59,9 +63,9 @@ class AzureReceiptClient:
             output_dir (str): 분석 결과 저장 폴더
         """
         try:
-            ensure_dir(output_dir, logger)
-            
+            ensure_dir(output_dir, success_logger)
             files = os.listdir(input_dir)
+            
             for filename in files:
                 if filename.lower().endswith('.png'):
                     input_path = os.path.join(input_dir, filename)
@@ -69,20 +73,20 @@ class AzureReceiptClient:
                     output_path = os.path.join(output_dir, output_filename)
                     
                     if os.path.exists(output_path):
-                        logger.info(f"[스킵] 이미 처리된 파일 : {filename}")
+                        success_logger.info(f"[스킵] 이미 처리된 파일 : {filename}")
                         continue
                     
                     result = self.analyze_receipt(input_path)
                     
                     if result:
-                        save_json(result, output_path, logger)
+                        save_json(result, output_path, success_logger)
                     else:
-                        logger.warning(f"[경고] 결과 없음 : {filename}")
+                        fail_logger.warning(f"[경고] 결과 없음 : {filename}")
             
-            logger.info(f"[완료] 폴더 분석 및 저장 완료 : {input_dir} -> {output_dir}")
+            success_logger.info(f"[완료] 폴더 분석 및 저장 완료 : {input_dir} -> {output_dir}")
         
         except Exception as e:
-            logger.exception(f"[예외] 폴더 분석 중 오류 발생: {e}")
+            fail_logger.exception(f"[예외] 폴더 분석 중 오류 발생: {e}")
             
 # =============================================
 # 메인 진입점

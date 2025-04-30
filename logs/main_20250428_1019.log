@@ -1,6 +1,0 @@
-2025-04-28 10:19:44,721 INFO: === Step 1: Preprocessing Start ===
-2025-04-28 10:19:45,084 INFO: === Step 1: Preprocessing Done ===
-2025-04-28 10:19:45,084 INFO: === Step 2: Azure Receipt Analysis Start ===
-2025-04-28 10:21:49,430 INFO: === Step 2: Azure Receipt Analysis Done ===
-2025-04-28 10:21:49,430 INFO: === Step 3: Postprocessing Start ===
-2025-04-28 10:21:49,655 INFO: === Step 3: Postprocessing Done ===

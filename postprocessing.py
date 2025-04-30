@@ -39,7 +39,7 @@ def extract_fields(json_data):
     """
     try:
         fields = json_data.get('documents', [])[0].get('fields', {})
-        merchant = fields.get('MerchantName', {}).get('value', '')
+        merchant = fields.get('MerchantName', {}).get('value', '') or fields.get('MerchantName',{}).get('content', '')
         total = fields.get('Total', {}).get('value', '')
         return merchant, total
     except Exception as e:
@@ -57,7 +57,8 @@ def process_folder(input_dir, output_csv, lookup_table):
         lookup_table (dict): 상호명 정규화 룩업 테이블
     """
     try:
-        ensure_dir(os.path.dirname(output_csv), logger)
+        output_dir = os.path.dirname(output_csv) or '.'
+        ensure_dir(output_dir, logger)
         rows = []
         
         for filename in os.listdir(input_dir):
@@ -71,6 +72,10 @@ def process_folder(input_dir, output_csv, lookup_table):
                 
                 merchant, total = extract_fields(data)
                 normalized_merchant = lookup_table.get(merchant, merchant)
+                if merchant != normalized_merchant:
+                    logger.info(f"[정규화] '{merchant}' -> '{normalized_merchant}'")
+                else:
+                    logger.warning(f"[경고] 정규화 미일치 : {merchant}")
                 
                 rows.append({
                     'filename' : filename,
@@ -84,7 +89,7 @@ def process_folder(input_dir, output_csv, lookup_table):
             fieldnames = ['filename', 'merchant', 'normalized_merchant', 'total']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
-            writer.writerow(rows)
+            writer.writerows(rows)
         logger.info(f"[완료] CSV 저장 완료: {output_csv}")
         
     except Exception as e:
