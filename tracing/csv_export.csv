@@ -1,0 +1,40 @@
+import csv
+import requests
+import os
+
+# 파일 경로 설정
+csv_file_path = 'your_file.csv'  # CSV 파일명
+output_dir = 'downloaded_images'  # 이미지 저장 폴더
+
+# 저장 폴더 없으면 생성
+os.makedirs(output_dir, exist_ok=True)
+
+# CSV에서 이미지 링크 읽고 다운로드
+with open(csv_file_path, newline='', encoding='utf-8') as csvfile:
+    reader = csv.reader(csvfile)
+    download_count = 0
+
+    for row in reader:
+        # 빈 줄 또는 비어 있는 셀은 건너뜀
+        if not row or not row[0].strip():
+            continue
+
+        url = row[0].strip()
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+
+            # 확장자 추출
+            ext = url.split('.')[-1].split('?')[0]
+            if ext.lower() not in ['jpg', 'jpeg', 'png', 'webp']:
+                ext = 'jpg'
+
+            download_count += 1
+            file_name = f'image_{download_count}.{ext}'
+            file_path = os.path.join(output_dir, file_name)
+            with open(file_path, 'wb') as f:
+                f.write(response.content)
+
+            print(f'Downloaded: {file_name}')
+        except Exception as e:
+            print(f'Failed to download from {url}: {e}')
