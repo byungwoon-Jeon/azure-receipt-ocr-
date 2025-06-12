@@ -1,16 +1,17 @@
+from PIL import Image
 import os
 
-def rename_all_to_png(folder_path):
+def convert_jpg_to_png(folder_path):
     for filename in os.listdir(folder_path):
         base, ext = os.path.splitext(filename)
-        ext = ext.lower()
-        if ext in ['.jpg', '.jpeg', '.png']:
-            new_name = base + '.png'
-            src = os.path.join(folder_path, filename)
-            dst = os.path.join(folder_path, new_name)
-            os.rename(src, dst)
-            print(f"Renamed: {filename} → {new_name}")
+        if ext.lower() in ['.jpg', '.jpeg']:
+            jpg_path = os.path.join(folder_path, filename)
+            png_path = os.path.join(folder_path, base + '.png')
 
-# 사용 예시
-folder_path = "C:/your/folder/path"  # <- 대상 폴더 경로로 수정
-rename_all_to_png(folder_path)
+            try:
+                with Image.open(jpg_path) as img:
+                    img.convert("RGB").save(png_path, "PNG")
+                os.remove(jpg_path)  # 기존 jpg 파일 삭제 (선택)
+                print(f"Converted: {filename} → {base}.png")
+            except Exception as e:
+                print(f"Error converting {filename}: {e}")
