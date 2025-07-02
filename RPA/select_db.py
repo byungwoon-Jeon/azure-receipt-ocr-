@@ -1,42 +1,57 @@
+import os
+import csv
+import traceback
 from datetime import datetime, timedelta
-from util import db_utils  # manage_db_query 함수가 정의된 모듈
-import logging
+from typing import List, Tuple
 
-logger = logging.getLogger(__name__)
-
-def get_yesterday_cardfile_data(db_config: dict) -> list:
+def select_and_save_csv(in_params: dict, db_config: dict) -> List[Tuple]:
     """
-    LDCOM_CARDFILE_LOG 테이블에서 전날(어제) 기준의 데이터 조회
+    전날 날짜 기준으로 DB에서 데이터를 SELECT하고 CSV로 저장한 뒤, 리스트로 반환하는 함수
 
     Args:
-        db_config (dict): DB 연결 정보 (host, port, service_name, user, password)
-
+        in_params (dict): {
+            "csv_output_dir": "CSV 저장 경로 (폴더)",
+            ...
+        }
+        db_config (dict): DB 연결 정보
     Returns:
-        list: 조회된 행의 리스트 (FIID, SEQ, ATTACH_FILE, FILE_PATH, LOAD_DATE)
-              예외 발생 시 빈 리스트 반환
+        List[Tuple]: 조회된 DB 결과 리스트
     """
     try:
-        # 전날 날짜 계산
-        yesterday = datetime.today() - timedelta(days=1)
-        date_str = yesterday.strftime('%Y-%m-%d')
+        # 1. 전날 날짜 구하기
+        target_date = (datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-        # 쿼리 정의
+        # 2. 쿼리 구성
         query = """
-            SELECT FIID, SEQ, ATTACH_FILE, FILE_PATH, LOAD_DATE
+            SELECT FIID, SEQ, GUBUN, ATTACH_FILE, FILE_PATH, LOAD_DATE
             FROM LDCOM_CARDFILE_LOG
-            WHERE TRUNC(LOAD_DATE) = TO_DATE(:1, 'YYYY-MM-DD')
+            WHERE TO_CHAR(LOAD_DATE, 'YYYY-MM-DD') = :1
         """
 
-        # DB 조회 실행
-        rows = db_utils.manage_db_query(query=query, params=(date_str,), db_config=db_config)
+        # 3. DB에서 데이터 조회
+        from util.db_utils import manage_db_query  # 공통 유틸 사용
+        rows = manage_db_query(query=query, params=(target_date,), db_config=db_config)
 
-        if rows is None:
-            logger.warning("DB 조회 결과가 None입니다.")
+        if not rows:
+            print("전날 데이터가 존재하지 않습니다.")
             return []
 
-        logger.info(f"{len(rows)}건의 전날 데이터를 조회했습니다.")
+        # 4. CSV 저장 경로 지정
+        csv_output_dir = in_params["csv_output_dir"]
+        os.makedirs(csv_output_dir, exist_ok=True)
+
+        csv_path = os.path.join(csv_output_dir, f"ldcom_cardfile_log_{target_date}.csv")
+
+        # 5. CSV 저장
+        with open(csv_path, mode="w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(["FIID", "SEQ", "GUBUN", "ATTACH_FILE", "FILE_PATH", "LOAD_DATE"])
+            writer.writerows(rows)
+
+        print(f"[INFO] {len(rows)}건의 데이터를 CSV로 저장 완료 → {csv_path}")
         return rows
 
     except Exception as e:
-        logger.exception(f"전날 카드파일 데이터를 조회하는 중 오류 발생: {e}")
+        print(f"[ERROR] DB 조회 및 CSV 저장 실패: {e}")
+        traceback.print_exc()
         return []
