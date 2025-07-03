@@ -95,3 +95,14 @@ def query_yesterday_data(in_params: dict) -> list:
     except Exception as e:
         logger.error(f"[DB] 전날 데이터 조회 중 오류 발생: {e}")
         return []
+
+from util import idp_utils
+
+in_params = {
+    "logger": idp_utils.setup_logger("QUERY_LOGGER", logging.DEBUG),
+    "connection": conn,  # HANA DB 연결 객체
+    "input_table": "LDCOM_CARDFILE_LOG",
+    "load_date_column": "LOAD_DATE"
+}
+
+df = query_yesterday_data(in_params)
