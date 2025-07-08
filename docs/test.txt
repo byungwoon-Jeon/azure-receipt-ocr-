@@ -2,3 +2,14 @@ curl -X POST "https://<your-endpoint>/formrecognizer/documentModels/prebuilt-rec
   -H "Content-Type: image/png" ^
   -H "Ocp-Apim-Subscription-Key: <your-key>" ^
   --data-binary "@receipt.png"
+
+import requests
+
+url = "https://<your-endpoint>/formrecognizer/documentModels/prebuilt-receipt:analyze?api-version=2024-11-30"
+headers = {
+    "Content-Type": "image/png",
+    "Ocp-Apim-Subscription-Key": "<your-key>"
+}
+with open("receipt.png", "rb") as f:
+    response = requests.post(url, headers=headers, data=f)
+    print(response.headers["operation-location"])
