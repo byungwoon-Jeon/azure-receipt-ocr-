@@ -1,0 +1,4 @@
+curl -X POST "https://<your-endpoint>/formrecognizer/documentModels/prebuilt-receipt:analyze?api-version=2024-11-30" ^
+  -H "Content-Type: image/png" ^
+  -H "Ocp-Apim-Subscription-Key: <your-key>" ^
+  --data-binary "@receipt.png"
