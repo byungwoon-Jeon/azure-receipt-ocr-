@@ -13,3 +13,22 @@ headers = {
 with open("receipt.png", "rb") as f:
     response = requests.post(url, headers=headers, data=f)
     print(response.headers["operation-location"])
+
+import requests
+import os
+
+endpoint = "https://<your-resource>.cognitiveservices.azure.com"
+key = "<your-key>"
+
+url = f"{endpoint}/formrecognizer/documentModels/prebuilt-receipt:analyze?api-version=2024-11-30"
+
+headers = {
+    "Content-Type": "image/png",
+    "Ocp-Apim-Subscription-Key": key
+}
+
+with open("receipt.png", "rb") as f:
+    response = requests.post(url, headers=headers, data=f)
+    print(response.status_code)
+    print(response.headers)
+    print(response.text)
