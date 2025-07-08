@@ -32,3 +32,8 @@ with open("receipt.png", "rb") as f:
     print(response.status_code)
     print(response.headers)
     print(response.text)
+
+curl -X GET "https://<your-endpoint>/formrecognizer/documentModels/prebuilt-receipt/analyzeResults/<resultId>?api-version=2024-11-30" ^
+  -H "Ocp-Apim-Subscription-Key: <your-key>"
+
+
