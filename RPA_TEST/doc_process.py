@@ -28,8 +28,8 @@ def run_azure_ocr(in_params: dict, record: dict) -> dict:
     try:
         # ─ 입력 검증 ─
         for key in ["azure_endpoint", "azure_key", "ocr_json_dir"]:
-            assert key in in_params, f"in_params에 '{key}' 키가 없습니다."
-        assert "file_path" in record, "'file_path' 키가 없습니다."
+            assert key in in_params, f"[ERROR] in_params에 '{key}' 키가 없습니다."
+        assert "file_path" in record, "[ERROR] record에 'file_path' 키가 없습니다."
 
         endpoint = in_params["azure_endpoint"]
         key = in_params["azure_key"]
@@ -71,9 +71,9 @@ if __name__ == "__main__":
     from pprint import pprint
 
     in_params = {
-        "azure_endpoint": "https://<your-endpoint>.cognitiveservices.azure.com/",  # 🔁 수정
-        "azure_key": "<your-api-key>",  # 🔁 수정
-        "ocr_json_dir": "C:/Users/quddn/Downloads/test/ocr_json"  # 결과 저장 경로
+        "azure_endpoint": "https://<your-endpoint>.cognitiveservices.azure.com/",
+        "azure_key": "<your-api-key>",
+        "ocr_json_dir": "C:/Users/quddn/Downloads/test/ocr_json"
     }
 
     record = {
@@ -81,7 +81,7 @@ if __name__ == "__main__":
         "LINE_INDEX": 1,
         "RECEIPT_INDEX": 1,
         "COMMON_YN": 0,
-        "file_path": "C:/Users/quddn/Downloads/test/cropped/라인아이템.png"  # 🔁 실제 존재하는 PNG로 수정
+        "file_path": "C:/Users/quddn/Downloads/test/cropped/라인아이템.png"
     }
 
     print("🧪 Azure OCR 테스트 시작...")
