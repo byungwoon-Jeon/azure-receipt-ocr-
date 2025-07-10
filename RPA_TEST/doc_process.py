@@ -4,29 +4,16 @@ import logging
 import traceback
 from azure.core.credentials import AzureKeyCredential
 from azure.ai.formrecognizer import DocumentAnalysisClient
+from utils.logger_utils import setup_module_logger
 
 def run_azure_ocr(in_params: dict, record: dict) -> dict:
-    """
-    Azure Document Intelligence로 OCR 수행 후 결과 JSON 저장
-
-    Args:
-        in_params (dict): {
-            "azure_endpoint": Azure 엔드포인트,
-            "azure_key": Azure 키,
-            "ocr_json_dir": JSON 저장 경로
-        }
-        record (dict): {
-            "FIID", "LINE_INDEX", "RECEIPT_INDEX", "COMMON_YN", "file_path"
-        }
-
-    Returns:
-        dict: OCR JSON 데이터 (또는 에러 정보)
-    """
-    logger = logging.getLogger("AZURE_OCR")
-    logger.setLevel(logging.DEBUG)
+    logger = setup_module_logger(
+        logger_name=in_params.get("logger_name", "AZURE_OCR"),
+        log_dir=in_params.get("log_dir", "./logs"),
+        log_level=in_params.get("log_level", logging.DEBUG)
+    )
 
     try:
-        # ─ 입력 검증 ─
         for key in ["azure_endpoint", "azure_key", "ocr_json_dir"]:
             assert key in in_params, f"[ERROR] in_params에 '{key}' 키가 없습니다."
         assert "file_path" in record, "[ERROR] record에 'file_path' 키가 없습니다."
@@ -39,13 +26,11 @@ def run_azure_ocr(in_params: dict, record: dict) -> dict:
         file_path = record["file_path"]
         client = DocumentAnalysisClient(endpoint=endpoint, credential=AzureKeyCredential(key))
 
-        # ─ Azure OCR 요청 ─
         with open(file_path, "rb") as f:
             poller = client.begin_analyze_document("prebuilt-receipt", document=f)
             result = poller.result()
             result_dict = result.to_dict()
 
-        # ─ JSON 저장 ─
         base_filename = os.path.splitext(os.path.basename(file_path))[0]
         json_filename = f"{base_filename}.ocr.json"
         json_path = os.path.join(json_dir, json_filename)
@@ -58,6 +43,23 @@ def run_azure_ocr(in_params: dict, record: dict) -> dict:
 
     except Exception as e:
         logger.error(f"OCR 실패: {traceback.format_exc()}")
+
+        error_json_dir = in_params.get("error_json_dir", "./error_json")
+        os.makedirs(error_json_dir, exist_ok=True)
+
+        fail_filename = f"fail_{record.get('FIID')}_{record.get('LINE_INDEX')}_{record.get('RECEIPT_INDEX')}_{record.get('COMMON_YN')}.json"
+        fail_path = os.path.join(error_json_dir, fail_filename)
+
+        with open(fail_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "RESULT_CODE": "AZURE_ERR",
+                "RESULT_MESSAGE": f"OCR 실패: {str(e)}",
+                "FIID": record.get("FIID"),
+                "LINE_INDEX": record.get("LINE_INDEX"),
+                "RECEIPT_INDEX": record.get("RECEIPT_INDEX"),
+                "COMMON_YN": record.get("COMMON_YN")
+            }, f, indent=2, ensure_ascii=False)
+
         return {
             "FIID": record.get("FIID"),
             "LINE_INDEX": record.get("LINE_INDEX"),

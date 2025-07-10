@@ -3,45 +3,16 @@ import json
 import re
 import traceback
 from datetime import datetime
-
-
-def extract_additional_fields_from_json(json_path: str) -> dict:
-    """
-    OCR JSON에서 사업자번호, 배달주소, 전체 텍스트 추출
-    """
-    result = {"BIZ_NO": None, "DELIVERY_ADDR": None, "CONTENTS": None}
-
-    if not os.path.exists(json_path):
-        raise FileNotFoundError(f"[ERROR] JSON 파일이 존재하지 않습니다: {json_path}")
-
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    result["CONTENTS"] = data.get("analyzeResult", {}).get("content", "")
-    lines = data.get("analyzeResult", {}).get("pages", [{}])[0].get("lines", [])
-
-    for line in lines:
-        content = line.get("content", "")
-
-        if not result["BIZ_NO"]:
-            match = re.search(r"사업자[ ]*번호.*?(\d{3}-\d{2}-\d{5}|\d{10})", content)
-            if match:
-                result["BIZ_NO"] = match.group(1)
-
-        if not result["DELIVERY_ADDR"]:
-            match = re.search(r"배달[ ]*주소[:：]?\s*(.*)", content)
-            if match:
-                result["DELIVERY_ADDR"] = match.group(1)
-
-    return result
-
+from utils.logger_utils import setup_module_logger
 
 def post_process_and_save(in_params: dict, record: dict) -> str:
-    """
-    OCR 결과 JSON을 후처리하여 Summary + Item을 JSON으로 저장
-    """
+    logger = setup_module_logger(
+        logger_name=in_params.get("logger_name", "POST_PROCESS"),
+        log_dir=in_params.get("log_dir", "./logs"),
+        log_level=in_params.get("log_level", logging.DEBUG)
+    )
+
     try:
-        # ─ 입력 검증 ─
         for key in ["postprocess_output_dir"]:
             assert key in in_params, f"[ERROR] in_params에 '{key}'가 없습니다."
         for key in ["json_path", "FIID", "LINE_INDEX", "RECEIPT_INDEX", "COMMON_YN"]:
@@ -60,7 +31,6 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
         doc = data.get("analyzeResult", {}).get("documents", [{}])[0]
         fields = doc.get("fields", {})
 
-        # 공통 필드
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         fiid = record["FIID"]
         line_index = record["LINE_INDEX"]
@@ -68,7 +38,6 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
         common_yn = record["COMMON_YN"]
         attach_file = record.get("ATTACH_FILE")
 
-        # Summary
         summary = {
             "FIID": fiid,
             "LINE_INDEX": line_index,
@@ -90,7 +59,6 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
             "UPDATE_DATE": now_str
         }
 
-        # Items
         item_list = []
         items_field = fields.get("Items", {})
         if "valueArray" in items_field:
@@ -110,14 +78,13 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
                     "UPDATE_DATE": now_str
                 })
 
-        # 추가 필드 추출
+        from post_process import extract_additional_fields_from_json
         extra = extract_additional_fields_from_json(json_path)
         summary["BIZ_NO"] = extra["BIZ_NO"]
         summary["DELIVERY_ADDR"] = extra["DELIVERY_ADDR"]
         for item in item_list:
             item["CONTENTS"] = extra["CONTENTS"]
 
-        # 저장
         filename = f"post_{fiid}_{line_index}_{receipt_index}.json"
         output_path = os.path.join(output_dir, filename)
         with open(output_path, "w", encoding="utf-8") as f:
@@ -126,7 +93,25 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
         return output_path
 
     except Exception as e:
-        raise RuntimeError(f"[ERROR] 후처리 중 예외 발생: {e}\n{traceback.format_exc()}")
+        logger.error(f"후처리 실패: {traceback.format_exc()}")
+
+        error_json_dir = in_params.get("error_json_dir", "./error_json")
+        os.makedirs(error_json_dir, exist_ok=True)
+
+        fail_filename = f"fail_{record.get('FIID')}_{record.get('LINE_INDEX')}_{record.get('RECEIPT_INDEX')}_{record.get('COMMON_YN')}.json"
+        fail_path = os.path.join(error_json_dir, fail_filename)
+
+        with open(fail_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "RESULT_CODE": "POST_ERR",
+                "RESULT_MESSAGE": f"후처리 실패: {str(e)}",
+                "FIID": record.get("FIID"),
+                "LINE_INDEX": record.get("LINE_INDEX"),
+                "RECEIPT_INDEX": record.get("RECEIPT_INDEX"),
+                "COMMON_YN": record.get("COMMON_YN")
+            }, f, indent=2, ensure_ascii=False)
+
+        raise RuntimeError(f"후처리 실패: {e}")
 
 
 # 🧪 테스트 코드
