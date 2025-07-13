@@ -1,0 +1,55 @@
+{
+  "summary": {
+    "FIID": "TEST001",
+    "GUBUN": "Y",
+    "LINE_INDEX": 1,
+    "RECEIPT_INDEX": 1,
+    "COMMON_YN": 0,
+    "ATTACH_FILE": "http://apv.skhynix.com/test/test001.jpg",
+    "COUNTRY": "KR",
+    "RECEIPT_TYPE": "음식점",
+    "MERCHANT_NAME": "테스트식당",
+    "MERCHANT_PHONE_NO": "010-1234-5678",
+    "DELIVERY_ADDR": "경기도 이천시 어딘가 123",
+    "TRANSACTION_DATE": "2025-07-10",
+    "TRANSACTION_TIME": "12:34:56",
+    "TOTAL_AMOUNT": "11000",
+    "SUMTOTAL_AMOUNT": "10000",
+    "TAX_AMOUNT": "1000",
+    "BIZ_NO": "123-45-67890",
+    "RESULT_CODE": 200,
+    "RESULT_MESSAGE": "SUCCESS",
+    "CREATE_DATE": "2025-07-10 13:00:00",
+    "UPDATE_DATE": "2025-07-10 13:00:00"
+  },
+  "items": [
+    {
+      "FIID": "TEST001",
+      "LINE_INDEX": 1,
+      "RECEIPT_INDEX": 1,
+      "ITEM_INDEX": 1,
+      "ITEM_NAME": "비빔밥",
+      "ITEM_QTY": "1",
+      "ITEM_UNIT_PRICE": "8000",
+      "ITEM_TOTAL_PRICE": "8000",
+      "CONTENTS": "비빔밥 1개",
+      "COMMON_YN": 0,
+      "CREATE_DATE": "2025-07-10 13:00:00",
+      "UPDATE_DATE": "2025-07-10 13:00:00"
+    },
+    {
+      "FIID": "TEST001",
+      "LINE_INDEX": 1,
+      "RECEIPT_INDEX": 1,
+      "ITEM_INDEX": 2,
+      "ITEM_NAME": "음료",
+      "ITEM_QTY": "1",
+      "ITEM_UNIT_PRICE": "2000",
+      "ITEM_TOTAL_PRICE": "2000",
+      "CONTENTS": "음료 1개",
+      "COMMON_YN": 0,
+      "CREATE_DATE": "2025-07-10 13:00:00",
+      "UPDATE_DATE": "2025-07-10 13:00:00"
+    }
+  ]
+}
