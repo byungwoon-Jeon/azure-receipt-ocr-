@@ -1,0 +1,69 @@
+{
+  "summary": {
+    "FIID": "TEST001",
+    "LINE_INDEX": 1,
+    "RECEIPT_INDEX": 1,
+    "COMMON_YN": 0,
+    "GUBUN": "Y",
+    "ATTACH_FILE": "asdasdas",
+    "COUNTRY": "USA",
+    "RECEIPT_TYPE": null,
+    "MERCHANT_NAME": "Contoso",
+    "MERCHANT_PHONE_NO": null,
+    "DELIVERY_ADDR": null,
+    "TRANSACTION_DATE": "2024-03-12",
+    "TRANSACTION_TIME": "17:55:00",
+    "TOTAL_AMOUNT": "61.48",
+    "SUMTOTAL_AMOUNT": "48.68",
+    "TAX_AMOUNT": "4.8",
+    "BIZ_NO": null,
+    "RESULT_CODE": 200,
+    "RESULT_MESSAGE": "SUCCESS",
+    "CREATE_DATE": "2025-07-14 22:28:16",
+    "UPDATE_DATE": "2025-07-14 22:28:16"
+  },
+  "items": [
+    {
+      "FIID": "TEST001",
+      "LINE_INDEX": 1,
+      "RECEIPT_INDEX": 1,
+      "ITEM_INDEX": 1,
+      "ITEM_NAME": "Hot dog",
+      "ITEM_QTY": "4",
+      "ITEM_UNIT_PRICE": null,
+      "ITEM_TOTAL_PRICE": "27.8",
+      "CONTENTS": null,
+      "COMMON_YN": 0,
+      "CREATE_DATE": "2025-07-14 22:28:16",
+      "UPDATE_DATE": "2025-07-14 22:28:16"
+    },
+    {
+      "FIID": "TEST001",
+      "LINE_INDEX": 1,
+      "RECEIPT_INDEX": 1,
+      "ITEM_INDEX": 2,
+      "ITEM_NAME": "Double cheeseburger",
+      "ITEM_QTY": "2",
+      "ITEM_UNIT_PRICE": null,
+      "ITEM_TOTAL_PRICE": "17.98",
+      "CONTENTS": null,
+      "COMMON_YN": 0,
+      "CREATE_DATE": "2025-07-14 22:28:16",
+      "UPDATE_DATE": "2025-07-14 22:28:16"
+    },
+    {
+      "FIID": "TEST001",
+      "LINE_INDEX": 1,
+      "RECEIPT_INDEX": 1,
+      "ITEM_INDEX": 3,
+      "ITEM_NAME": "Beer",
+      "ITEM_QTY": "2",
+      "ITEM_UNIT_PRICE": null,
+      "ITEM_TOTAL_PRICE": "2.9",
+      "CONTENTS": null,
+      "COMMON_YN": 0,
+      "CREATE_DATE": "2025-07-14 22:28:16",
+      "UPDATE_DATE": "2025-07-14 22:28:16"
+    }
+  ]
+}

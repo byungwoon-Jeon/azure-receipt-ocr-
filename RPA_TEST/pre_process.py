@@ -8,8 +8,18 @@ from ultralytics import YOLO
 
 logger = logging.getLogger("PRE_PRE_PROCESS")
 
-
 def download_file_from_url(url: str, save_dir: str, is_file_path: bool = False) -> str:
+    """
+    지정한 URL로부터 파일을 다운로드하여 save_dir에 저장한 후, 저장된 파일 경로를 반환합니다.
+
+    입력:
+    - url (str): 다운로드할 파일 URL. is_file_path가 True이면 이 경로 앞에 기본 서버 주소가 추가됩니다.
+    - save_dir (str): 파일을 저장할 디렉토리 경로.
+    - is_file_path (bool): URL이 절대 경로가 아닌 서버 파일 경로일 경우 True로 설정합니다.
+
+    출력:
+    - str: 다운로드되어 저장된 파일의 경로.
+    """
     if is_file_path and not url.lower().startswith("http"):
         url = "http://apv.skhynix.com" + url
     if "@" in url:
@@ -23,15 +33,23 @@ def download_file_from_url(url: str, save_dir: str, is_file_path: bool = False) 
         f.write(response.content)
     return save_path
 
-
 def convert_to_png(input_path: str, save_dir: str) -> str:
+    """
+    주어진 이미지 파일(input_path)을 PNG 형식으로 변환하여 save_dir 디렉토리에 저장하고, 변환된 PNG 파일 경로를 반환합니다.
+
+    입력:
+    - input_path (str): 원본 이미지 파일 경로.
+    - save_dir (str): 변환된 PNG 파일을 저장할 디렉토리 경로.
+
+    출력:
+    - str: 변환된 PNG 이미지 파일의 경로.
+    """
     os.makedirs(save_dir, exist_ok=True)
     filename = os.path.splitext(os.path.basename(input_path))[0] + ".png"
     save_path = os.path.join(save_dir, filename)
     with Image.open(input_path) as img:
         img.convert("RGB").save(save_path, "PNG")
     return save_path
-
 
 def crop_receipts_with_yolo(
     model: YOLO,
@@ -46,6 +64,26 @@ def crop_receipts_with_yolo(
     common_yn: int,
     cropped_dir: str
 ) -> list:
+    """
+    입력 이미지를 대상으로 YOLO 모델을 사용하여 영수증 영역을 검출하고 잘라낸 후, 잘라낸 이미지들의 정보를 리스트로 반환합니다.
+    file_type에 따라 처리 방식이 다르며, ATTACH_FILE의 경우 한 이미지당 하나의 영수증만 처리하고, FILE_PATH의 경우 여러 영수증을 처리합니다.
+
+    입력:
+    - model (YOLO): YOLO 모델 객체.
+    - png_path (str): 처리 대상 이미지 파일 (PNG) 경로.
+    - file_type (str): "ATTACH_FILE" 또는 "FILE_PATH" 중 하나로, 첨부 파일인지 경로 파일인지 구분.
+    - base_filename (str): 출력 파일 이름의 기본 (확장자 및 인덱스 제외).
+    - original_img (PIL.Image.Image): 원본 이미지 객체 (이미 로드된 PIL Image).
+    - fiid (str): 영수증이 속한 FIID 식별자.
+    - line_index (int): 영수증이 속한 LINE_INDEX 값.
+    - gubun (str): 구분 값 (예: "Y" 등).
+    - receipt_index (int 또는 None): ATTACH_FILE의 경우 영수증 순번 (일반적으로 1), FILE_PATH의 경우 None (자동 결정됨).
+    - common_yn (int): 첨부 파일 여부 플래그 (ATTACH_FILE은 0, FILE_PATH는 1).
+    - cropped_dir (str): 잘라낸 이미지 파일을 저장할 디렉토리 경로.
+
+    출력:
+    - list: 검출/크롭 결과 딕셔너리들의 리스트. 각 딕셔너리는 성공 시 "file_path" 및 입력 식별자(FIID, LINE_INDEX 등)를 포함하고, 검출 실패나 오류 시 "RESULT_CODE"와 "RESULT_MESSAGE"를 포함합니다.
+    """
     results = []
     yolo_results = model(png_path)
     boxes = yolo_results[0].boxes
@@ -103,8 +141,18 @@ def crop_receipts_with_yolo(
 
     return results
 
-
 def run_pre_pre_process(in_params: dict, db_record: dict) -> list:
+    """
+    주어진 데이터베이스 레코드(db_record)에 대해 전처리 및 YOLO 모델 기반 이미지를 분할(crop)하는 과정을 수행합니다.
+    ATTACH_FILE와 FILE_PATH 두 유형에 대해 각각 이미지를 다운로드 및 PNG 변환한 후, YOLO를 통해 영수증 영역을 잘라냅니다.
+
+    입력:
+    - in_params (dict): 전처리 및 모델 관련 설정값들이 담긴 딕셔너리 (output_dir, preprocessed_dir, cropped_dir, yolo_model_path 등 필수).
+    - db_record (dict): 처리 대상 DB 레코드 (FIID, LINE_INDEX, GUBUN, ATTACH_FILE, FILE_PATH 등의 키를 포함).
+
+    출력:
+    - list: YOLO 검출 및 크롭 결과 딕셔너리들의 리스트. 영수증 이미지가 성공적으로 잘려진 경우 각 결과에는 "file_path"와 식별 정보(FIID, LINE_INDEX 등)가 포함되며, 검출 실패 시 "RESULT_CODE"와 "RESULT_MESSAGE"를 포함한 항목이 들어갑니다.
+    """
     try:
         for key in ["output_dir", "preprocessed_dir", "cropped_dir", "yolo_model_path"]:
             assert key in in_params, f"[ERROR] '{key}' is required in in_params."

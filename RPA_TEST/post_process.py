@@ -9,9 +9,18 @@ logger = logging.getLogger("POST_PROCESS")
 
 def post_process_and_save(in_params: dict, record: dict) -> str:
     """
-    Perform post-processing on the OCR result JSON (extract fields, format data),
-    then save a combined summary/items JSON ready for database insertion.
-    Returns the file path of the saved post-processed JSON.
+    Azure OCR 결과 JSON 데이터를 후처리하여 요약(summary) 정보와 항목(item) 리스트를 추출하고, 이들을 하나의 JSON 파일로 저장합니다.
+    인식된 필드 값을 정리하고, 필요한 경우 추가 필드를 추출하여 summary와 item 리스트를 생성합니다.
+
+    입력:
+    - in_params (dict): 후처리 동작에 필요한 설정값 (postprocess_output_dir 등)과 경로 정보.
+    - record (dict): 후처리 대상 정보를 담은 딕셔너리. OCR 결과 JSON 경로(json_path)와 식별자 정보(FIID, LINE_INDEX, RECEIPT_INDEX, COMMON_YN 등)를 포함해야 합니다.
+
+    출력:
+    - str: 생성된 후처리 결과 JSON 파일의 경로.
+
+    예외 처리:
+    후처리 중 오류 발생 시 로그를 남기고 오류 내용을 담은 JSON 파일을 생성한 뒤, RuntimeError를 발생시킵니다.
     """
     try:
         # Required input directories/fields
@@ -50,17 +59,17 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
             "COMMON_YN": common_yn,
             "GUBUN": gubun,
             "ATTACH_FILE": attach_file,
-            "COUNTRY": fields.get("CountryRegion", {}).get("valueString"),
-            "RECEIPT_TYPE": fields.get("MerchantCategory", {}).get("valueString"),
+            "COUNTRY": fields.get("CountryRegion", {}).get("valueCountryRegion"),
+            "RECEIPT_TYPE": fields.get("MerchantCategory", {}).get("valueString"),  # 이건 그대로
             "MERCHANT_NAME": fields.get("MerchantName", {}).get("valueString"),
             "MERCHANT_PHONE_NO": fields.get("MerchantPhoneNumber", {}).get("valueString"),
-            "DELIVERY_ADDR": None,   # to be filled by extra extraction
+            "DELIVERY_ADDR": None,
             "TRANSACTION_DATE": fields.get("TransactionDate", {}).get("valueDate"),
-            "TRANSACTION_TIME": fields.get("TransactionTime", {}).get("valueString"),
+            "TRANSACTION_TIME": fields.get("TransactionTime", {}).get("valueTime"),  # 여기도 `.get("valueTime")`로 수정
             "TOTAL_AMOUNT": str(fields.get("Total", {}).get("valueCurrency", {}).get("amount")),
             "SUMTOTAL_AMOUNT": str(fields.get("Subtotal", {}).get("valueCurrency", {}).get("amount")),
             "TAX_AMOUNT": str(fields.get("TotalTax", {}).get("valueCurrency", {}).get("amount")),
-            "BIZ_NO": None,         # to be filled by extra extraction
+            "BIZ_NO": None,
             "RESULT_CODE": 200,
             "RESULT_MESSAGE": "SUCCESS",
             "CREATE_DATE": now_str,
@@ -73,16 +82,23 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
         if isinstance(items_field, dict) and "valueArray" in items_field:
             for idx, item in enumerate(items_field["valueArray"], start=1):
                 obj = item.get("valueObject", {}) if item else {}
+
+                item_name = obj.get("Description", {}).get("valueString")
+                item_qty = obj.get("Quantity", {}).get("valueNumber")
+                item_unit_price = obj.get("Price", {}).get("valueCurrency", {}).get("amount") \
+                                  if "Price" in obj else None
+                item_total_price = obj.get("TotalPrice", {}).get("valueCurrency", {}).get("amount")
+
                 item_list.append({
                     "FIID": fiid,
                     "LINE_INDEX": line_index,
                     "RECEIPT_INDEX": receipt_index,
                     "ITEM_INDEX": idx,
-                    "ITEM_NAME": obj.get("Description", {}).get("valueString"),
-                    "ITEM_QTY": str(obj.get("Quantity", {}).get("valueNumber")),
-                    "ITEM_UNIT_PRICE": str(obj.get("Price", {}).get("valueCurrency", {}).get("amount")),
-                    "ITEM_TOTAL_PRICE": str(obj.get("TotalPrice", {}).get("valueCurrency", {}).get("amount")),
-                    "CONTENTS": None,    # to be filled by extra extraction
+                    "ITEM_NAME": item_name,
+                    "ITEM_QTY": str(item_qty) if item_qty is not None else None,
+                    "ITEM_UNIT_PRICE": str(item_unit_price) if item_unit_price is not None else None,
+                    "ITEM_TOTAL_PRICE": str(item_total_price) if item_total_price is not None else None,
+                    "CONTENTS": None,
                     "COMMON_YN": common_yn,
                     "CREATE_DATE": now_str,
                     "UPDATE_DATE": now_str

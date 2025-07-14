@@ -9,9 +9,16 @@ logger = logging.getLogger("AZURE_OCR")
 
 def run_azure_ocr(in_params: dict, record: dict) -> dict:
     """
-    Call Azure Form Recognizer OCR on the given image file (from record['file_path']).
-    Returns the OCR result as a dictionary. If OCR fails, writes an error JSON and 
-    returns a dict with RESULT_CODE and error message (including FIID, LINE_INDEX, etc.).
+    Azure Form Recognizer OCR 서비스를 호출하여 주어진 이미지 파일(record['file_path'])에 대한 문서 인식 결과를 반환합니다.
+    OCR 성공 시 결과를 JSON 파일로 저장하고 결과 딕셔너리를 반환합니다.
+    OCR 실패 시 오류 내용을 로그에 기록하고, 오류 정보를 담은 JSON 파일을 생성한 뒤, RESULT_CODE와 에러 메시지를 포함한 딕셔너리를 반환합니다 (이 때 FIID, LINE_INDEX 등 원본 식별자 포함).
+
+    입력:
+    - in_params (dict): Azure OCR 실행에 필요한 설정 (azure_endpoint, azure_key, ocr_json_dir 등 필수).
+    - record (dict): OCR 대상 정보를 담은 딕셔너리로, 'file_path' 키에 이미지 경로를 포함하며, 식별자 정보(FIID, LINE_INDEX 등)를 포함.
+
+    출력:
+    - dict: Azure OCR 결과를 담은 딕셔너리. 정상 처리 시 OCR 상세 결과가 포함되며, 실패 시 RESULT_CODE, RESULT_MESSAGE와 입력 식별자(FIID 등)가 포함됩니다.
     """
     try:
         # Required config values for Azure OCR

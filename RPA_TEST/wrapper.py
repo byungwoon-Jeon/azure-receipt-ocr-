@@ -11,7 +11,17 @@ from doc_process import run_azure_ocr
 from post_process import post_process_and_save
 
 def process_single_record(record: dict, in_params: dict):
-    """Process a single DB record through the entire OCR pipeline."""
+    """
+    하나의 DB 레코드에 대해 전체 OCR 파이프라인 단계를 실행합니다.
+    전처리(다운로드 및 YOLO 크롭), Azure OCR 인식, 후처리 및 DB 저장까지 순차적으로 수행하며, 각 단계의 결과에 따라 오류 시 다음 단계를 건너뜁니다.
+
+    입력:
+    - record (dict): 처리할 단일 레코드 (FIID, LINE_INDEX, GUBUN, ATTACH_FILE, FILE_PATH 등 포함).
+    - in_params (dict): 파이프라인 실행에 필요한 설정 정보가 담긴 딕셔너리 (DB 연결, 경로, Azure OCR 키 등).
+
+    출력:
+    - None: 처리는 부수 효과(파일 저장, DB 입력)로 이루어지며, 함수 자체는 값을 반환하지 않습니다. (오류 발생 시 내부적으로 로그를 기록합니다)
+    """
     logger = logging.getLogger("WRAPPER")
     try:
         # Run combined preprocessing (download + YOLO cropping)
@@ -49,7 +59,16 @@ def process_single_record(record: dict, in_params: dict):
         logger.error(f"[FATAL] Record processing failed: {record}\n{e}")
 
 def run_wrapper(in_params: dict):
-    """Run the OCR processing pipeline for all records of the target date."""
+    """
+    지정한 날짜에 해당하는 모든 DB 레코드를 조회하여 OCR 파이프라인을 실행합니다.
+    각 레코드를 별도의 스레드로 처리하며, 처리할 레코드가 없으면 함수를 종료합니다.
+
+    입력:
+    - in_params (dict): 파이프라인 설정 및 DB 연결 정보를 담은 딕셔너리. (sqlalchemy_conn, target_date 등과 OCR/YOLO 관련 설정 포함)
+
+    출력:
+    - None: 처리 완료 후 함수는 아무 값도 반환하지 않습니다. (과정 중 로그로 진행 상황을 기록합니다)
+    """
     logger = logging.getLogger("WRAPPER")
     # Query records from SAP HANA for the given date
     data_records = query_data_by_date(in_params)

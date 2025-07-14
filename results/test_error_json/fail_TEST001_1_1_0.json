@@ -1,0 +1,9 @@
+{
+  "RESULT_CODE": "POST_ERR",
+  "RESULT_MESSAGE": "후처리 실패: [ERROR] OCR JSON 파일이 없습니다: receipt-app-like.png (1).json",
+  "FIID": "TEST001",
+  "LINE_INDEX": 1,
+  "RECEIPT_INDEX": 1,
+  "COMMON_YN": 0,
+  "GUBUN": "Y"
+}
