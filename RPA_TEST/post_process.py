@@ -22,25 +22,25 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
     예외 처리:
     후처리 중 오류 발생 시 로그를 남기고 오류 내용을 담은 JSON 파일을 생성한 뒤, RuntimeError를 발생시킵니다.
     """
+    logger.info("[시작] post_process_and_save")
+
     try:
-        # Required input directories/fields
-        assert "postprocess_output_dir" in in_params, "[ERROR] 'postprocess_output_dir' not provided in in_params."
+        # 필수 입력값 검사
+        assert "postprocess_output_dir" in in_params, "[ERROR] 'postprocess_output_dir' 미지정"
         for key in ["json_path", "FIID", "LINE_INDEX", "RECEIPT_INDEX", "COMMON_YN"]:
-            assert key in record, f"[ERROR] record is missing '{key}'."
+            assert key in record, f"[ERROR] '{key}' 필드 없음"
 
         json_path = record["json_path"]
         output_dir = in_params["postprocess_output_dir"]
         os.makedirs(output_dir, exist_ok=True)
-        if not os.path.exists(json_path):
-            raise FileNotFoundError(f"[ERROR] OCR JSON 파일이 없습니다: {json_path}")
 
-        # Load the OCR result JSON (from Azure OCR)
+        if not os.path.exists(json_path):
+            raise FileNotFoundError(f"OCR JSON 파일이 존재하지 않음: {json_path}")
+
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        # Navigate to the fields in the Azure OCR result
-        doc = data.get("analyzeResult", {}).get("documents", [{}])
-        if doc:
-            doc = doc[0]
+
+        doc = data.get("analyzeResult", {}).get("documents", [{}])[0]
         fields = doc.get("fields", {}) if isinstance(doc, dict) else {}
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -51,7 +51,6 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
         attach_file = record.get("ATTACH_FILE")
         gubun = record.get("GUBUN")
 
-        # Build summary dictionary (including GUBUN)
         summary = {
             "FIID": fiid,
             "LINE_INDEX": line_index,
@@ -60,12 +59,12 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
             "GUBUN": gubun,
             "ATTACH_FILE": attach_file,
             "COUNTRY": fields.get("CountryRegion", {}).get("valueCountryRegion"),
-            "RECEIPT_TYPE": fields.get("MerchantCategory", {}).get("valueString"),  # 이건 그대로
+            "RECEIPT_TYPE": fields.get("MerchantCategory", {}).get("valueString"),
             "MERCHANT_NAME": fields.get("MerchantName", {}).get("valueString"),
             "MERCHANT_PHONE_NO": fields.get("MerchantPhoneNumber", {}).get("valueString"),
             "DELIVERY_ADDR": None,
             "TRANSACTION_DATE": fields.get("TransactionDate", {}).get("valueDate"),
-            "TRANSACTION_TIME": fields.get("TransactionTime", {}).get("valueTime"),  # 여기도 `.get("valueTime")`로 수정
+            "TRANSACTION_TIME": fields.get("TransactionTime", {}).get("valueTime"),
             "TOTAL_AMOUNT": str(fields.get("Total", {}).get("valueCurrency", {}).get("amount")),
             "SUMTOTAL_AMOUNT": str(fields.get("Subtotal", {}).get("valueCurrency", {}).get("amount")),
             "TAX_AMOUNT": str(fields.get("TotalTax", {}).get("valueCurrency", {}).get("amount")),
@@ -76,74 +75,55 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
             "UPDATE_DATE": now_str
         }
 
-        # Extract line items
+        # 라인 아이템 추출
         item_list = []
         items_field = fields.get("Items", {})
         if isinstance(items_field, dict) and "valueArray" in items_field:
             for idx, item in enumerate(items_field["valueArray"], start=1):
                 obj = item.get("valueObject", {}) if item else {}
-
-                item_name = obj.get("Description", {}).get("valueString")
-                item_qty = obj.get("Quantity", {}).get("valueNumber")
-                item_unit_price = obj.get("Price", {}).get("valueCurrency", {}).get("amount") \
-                                  if "Price" in obj else None
-                item_total_price = obj.get("TotalPrice", {}).get("valueCurrency", {}).get("amount")
-
                 item_list.append({
                     "FIID": fiid,
                     "LINE_INDEX": line_index,
                     "RECEIPT_INDEX": receipt_index,
                     "ITEM_INDEX": idx,
-                    "ITEM_NAME": item_name,
-                    "ITEM_QTY": str(item_qty) if item_qty is not None else None,
-                    "ITEM_UNIT_PRICE": str(item_unit_price) if item_unit_price is not None else None,
-                    "ITEM_TOTAL_PRICE": str(item_total_price) if item_total_price is not None else None,
-                    "CONTENTS": None,
-                    "COMMON_YN": common_yn,
-                    "CREATE_DATE": now_str,
-                    "UPDATE_DATE": now_str
+                    "ITEM_NAME": obj.get("Description", {}).get("valueString"),
+                    "ITEM_QTY": str(obj.get("Quantity", {}).get("valueNumber")) if obj.get("Quantity") else None,
+                    "ITEM_UNIT_PRICE": str(obj.get("Price", {}).get("valueCurrency", {}).get("amount")) if obj.get("Price") else None,
+                    "ITEM_TOTAL_PRICE": str(obj.get("TotalPrice", {}).get("valueCurrency", {}).get("amount")) if obj.get("TotalPrice") else None,
+                    "CONTENTS": json.dumps(obj, ensure_ascii=False)
                 })
 
-        # Optional: extract additional fields (e.g., BIZ_NO, DELIVERY_ADDR, CONTENTS) from the JSON if needed
-        try:
-            from post_process import extract_additional_fields_from_json
-            extra = extract_additional_fields_from_json(json_path)
-        except ImportError:
-            extra = {"BIZ_NO": None, "DELIVERY_ADDR": None, "CONTENTS": None}
-        summary["BIZ_NO"] = extra.get("BIZ_NO")
-        summary["DELIVERY_ADDR"] = extra.get("DELIVERY_ADDR")
-        for item in item_list:
-            item["CONTENTS"] = extra.get("CONTENTS")
+        # 결과 저장
+        result_json = {
+            "summary": summary,
+            "items": item_list
+        }
 
-        # Save the post-processed summary and items to a new JSON file
-        output_filename = f"post_{fiid}_{line_index}_{receipt_index}.json"
+        output_filename = f"{fiid}_{line_index}_{receipt_index}_post.json"
         output_path = os.path.join(output_dir, output_filename)
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump({"summary": summary, "items": item_list}, f, ensure_ascii=False, indent=2)
+        with open(output_path, "w", encoding="utf-8") as out_f:
+            json.dump(result_json, out_f, ensure_ascii=False, indent=2)
 
+        logger.info(f"[완료] 후처리 결과 저장: {output_path}")
+        logger.info("[종료] post_process_and_save")
         return output_path
 
     except Exception as e:
-        logger.error(f"후처리 실패: {traceback.format_exc()}")
+        logger.error(f"[ERROR] 후처리 실패: {e}")
+        traceback.print_exc()
 
-        # Write an error JSON file with details of the failure
-        error_json_dir = in_params.get("error_json_dir", "./error_json")
-        os.makedirs(error_json_dir, exist_ok=True)
-        fail_filename = f"fail_{record.get('FIID')}_{record.get('LINE_INDEX')}_{record.get('RECEIPT_INDEX')}_{record.get('COMMON_YN')}.json"
-        fail_path = os.path.join(error_json_dir, fail_filename)
-        with open(fail_path, "w", encoding="utf-8") as f:
+        error_path = os.path.join(in_params.get("error_json_dir", "./error_json"), f"fail_{record['FIID']}_{record['LINE_INDEX']}.json")
+        os.makedirs(os.path.dirname(error_path), exist_ok=True)
+        with open(error_path, "w", encoding="utf-8") as f:
             json.dump({
-                "RESULT_CODE": "POST_ERR",
-                "RESULT_MESSAGE": f"후처리 실패: {str(e)}",
                 "FIID": record.get("FIID"),
                 "LINE_INDEX": record.get("LINE_INDEX"),
                 "RECEIPT_INDEX": record.get("RECEIPT_INDEX"),
-                "COMMON_YN": record.get("COMMON_YN"),
-                "GUBUN": record.get("GUBUN")
+                "RESULT_CODE": "POST_ERR",
+                "RESULT_MESSAGE": str(e)
             }, f, ensure_ascii=False, indent=2)
 
-        # Propagate the error as an exception to be handled by the wrapper
-        raise RuntimeError(f"후처리 실패: {e}")
+        return error_path
 
 if __name__ == "__main__":
     from pprint import pprint

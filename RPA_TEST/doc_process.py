@@ -20,12 +20,14 @@ def run_azure_ocr(in_params: dict, record: dict) -> dict:
     출력:
     - dict: Azure OCR 결과를 담은 딕셔너리. 정상 처리 시 OCR 상세 결과가 포함되며, 실패 시 RESULT_CODE, RESULT_MESSAGE와 입력 식별자(FIID 등)가 포함됩니다.
     """
+    logger.info("[시작] run_azure_ocr")
+
     try:
-        # Required config values for Azure OCR
-        assert "azure_endpoint" in in_params, "[ERROR] 'azure_endpoint' is missing in in_params."
-        assert "azure_key" in in_params, "[ERROR] 'azure_key' is missing in in_params."
-        assert "ocr_json_dir" in in_params, "[ERROR] 'ocr_json_dir' is missing in in_params."
-        assert "file_path" in record, "[ERROR] record is missing 'file_path'."
+        # 필수 설정 확인
+        assert "azure_endpoint" in in_params, "'azure_endpoint'가 in_params에 없습니다."
+        assert "azure_key" in in_params, "'azure_key'가 in_params에 없습니다."
+        assert "ocr_json_dir" in in_params, "'ocr_json_dir'가 in_params에 없습니다."
+        assert "file_path" in record, "'file_path'가 record에 없습니다."
 
         endpoint = in_params["azure_endpoint"]
         key = in_params["azure_key"]
@@ -35,26 +37,28 @@ def run_azure_ocr(in_params: dict, record: dict) -> dict:
         file_path = record["file_path"]
         client = DocumentAnalysisClient(endpoint=endpoint, credential=AzureKeyCredential(key))
 
-        # Call Azure OCR service
+        # OCR 호출
         with open(file_path, "rb") as f:
             poller = client.begin_analyze_document("prebuilt-receipt", document=f)
             result = poller.result()
             result_dict = result.to_dict()
 
-        # Save the OCR result to a JSON file
+        # OCR 결과 저장
         base_filename = os.path.splitext(os.path.basename(file_path))[0]
         json_filename = f"{base_filename}.ocr.json"
         json_path = os.path.join(json_dir, json_filename)
         with open(json_path, "w", encoding="utf-8") as jf:
             json.dump(result_dict, jf, ensure_ascii=False, indent=2)
 
-        logger.info(f"OCR 성공 및 JSON 저장: {json_path}")
+        logger.info(f"[완료] OCR 성공 및 JSON 저장: {json_path}")
+        logger.info("[종료] run_azure_ocr")
         return result_dict
 
     except Exception as e:
-        logger.error(f"OCR 실패: {traceback.format_exc()}")
+        logger.error(f"[ERROR] OCR 실패: {e}")
+        traceback.print_exc()
 
-        # On failure, save an error JSON with details
+        # 실패 결과 JSON 저장
         error_json_dir = in_params.get("error_json_dir", "./error_json")
         os.makedirs(error_json_dir, exist_ok=True)
         fail_filename = f"fail_{record.get('FIID')}_{record.get('LINE_INDEX')}_{record.get('RECEIPT_INDEX')}_{record.get('COMMON_YN')}.json"
@@ -70,7 +74,7 @@ def run_azure_ocr(in_params: dict, record: dict) -> dict:
                 "GUBUN": record.get("GUBUN")
             }, f, ensure_ascii=False, indent=2)
 
-        # Return a dict indicating failure (including GUBUN for completeness)
+        logger.info("[종료] run_azure_ocr (오류로 종료)")
         return {
             "FIID": record.get("FIID"),
             "LINE_INDEX": record.get("LINE_INDEX"),

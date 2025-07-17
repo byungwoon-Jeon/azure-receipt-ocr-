@@ -22,41 +22,40 @@ def process_single_record(record: dict, in_params: dict):
     출력:
     - None: 처리는 부수 효과(파일 저장, DB 입력)로 이루어지며, 함수 자체는 값을 반환하지 않습니다. (오류 발생 시 내부적으로 로그를 기록합니다)
     """
-    logger = logging.getLogger("WRAPPER")
+    logger.info(f"[시작] process_single_record - FIID={record.get('FIID')}, LINE_INDEX={record.get('LINE_INDEX')}")
     try:
-        # Run combined preprocessing (download + YOLO cropping)
+        # 전처리 단계 실행 (다운로드 + 크롭)
         cropped_list = run_pre_pre_process(in_params, record)
+
         for cropped in cropped_list:
-            # Skip further processing if YOLO detected an error for this image
             if "RESULT_CODE" in cropped:
-                logger.warning(f"[SKIP] YOLO 오류: {cropped}")
+                logger.warning(f"[SKIP] YOLO 오류 발생: {cropped}")
                 continue
 
-            # Run Azure OCR on the cropped image
+            # OCR 실행
             ocr_result = run_azure_ocr(in_params, cropped)
             if ocr_result.get("RESULT_CODE") == "AZURE_ERR":
-                # Skip post-processing if OCR failed for this cropped image
+                logger.warning(f"[SKIP] Azure OCR 오류 발생: {ocr_result}")
                 continue
 
-            # Prepare for post-processing: get OCR JSON file path
-            fiid = cropped["FIID"]
-            line_index = cropped["LINE_INDEX"]
-            receipt_index = cropped["RECEIPT_INDEX"]
+            # 후처리 JSON 경로 구성
             json_path = os.path.join(
                 in_params["ocr_json_dir"],
                 f"{os.path.splitext(os.path.basename(cropped['file_path']))[0]}.ocr.json"
             )
 
-            # Run post-processing and save results to JSON
+            # 후처리 실행
             post_json_path = post_process_and_save(
-                {**in_params, "postprocess_output_dir": in_params["post_json_dir"]}, 
+                {**in_params, "postprocess_output_dir": in_params["post_json_dir"]},
                 {**cropped, "json_path": json_path, "ATTACH_FILE": record.get("ATTACH_FILE")}
             )
 
-            # Insert the results into the SAP HANA database
+            # DB 저장
             insert_postprocessed_result(post_json_path, in_params)
+
     except Exception as e:
-        logger.error(f"[FATAL] Record processing failed: {record}\n{e}")
+        logger.error(f"[FATAL] 처리 중 오류 발생 - FIID={record.get('FIID')}: {e}", exc_info=True)
+    logger.info(f"[종료] process_single_record - FIID={record.get('FIID')}, LINE_INDEX={record.get('LINE_INDEX')}")
 
 def run_wrapper(in_params: dict):
     """
@@ -69,20 +68,20 @@ def run_wrapper(in_params: dict):
     출력:
     - None: 처리 완료 후 함수는 아무 값도 반환하지 않습니다. (과정 중 로그로 진행 상황을 기록합니다)
     """
-    logger = logging.getLogger("WRAPPER")
-    # Query records from SAP HANA for the given date
+    logger.info("[시작] run_wrapper")
     data_records = query_data_by_date(in_params)
     if not data_records:
-        logger.info("📭 처리할 데이터가 없습니다.")  # No data to process
+        logger.info("📭 처리할 데이터가 없습니다.")
         return
 
-    logger.info(f"총 {len(data_records)}건 처리 시작")  # Starting processing for N records
+    logger.info(f"총 {len(data_records)}건 처리 시작")
     max_workers = in_params.get("max_workers", 4)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(process_single_record, rec, in_params) for rec in data_records]
         for future in as_completed(futures):
             future.result()
-    logger.info("✅ 전체 파이프라인 완료")  # Pipeline complete
+    logger.info("✅ 전체 파이프라인 완료")
+    logger.info("[종료] run_wrapper")
 
 if __name__ == "__main__":
     # Load database configuration from TOML file

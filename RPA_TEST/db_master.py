@@ -16,15 +16,14 @@ def query_data_by_date(in_params: dict) -> list:
     출력:
     - list: 조회된 레코드 딕셔너리들의 리스트. 각 딕셔너리는 FIID, GUBUN, LINE_INDEX, ATTACH_FILE, FILE_PATH 키를 포함하며, LINE_INDEX는 정수형으로 반환됩니다.
     """
-    logger = logging.getLogger("WRAPPER")
+    logger.info("[시작] query_data_by_date")
     try:
         conn = in_params["sqlalchemy_conn"]
-        # Determine target date (default to yesterday if not provided)
         import datetime
         target_date = in_params.get("target_date")
         if not target_date:
             target_date = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-        # Select only the required fields, aliasing SEQ as LINE_INDEX
+
         query = text("""
             SELECT 
                 FIID,
@@ -37,21 +36,22 @@ def query_data_by_date(in_params: dict) -> list:
         """)
         result = conn.execute(query, {"target_date": target_date})
         rows = result.fetchall()
-        # Convert each row to dict
-        records = [dict(zip(result.keys(), row)) for row in rows]
-        # 변경: SAP HANA 결과 딕셔너리의 key를 대문자로 변환하고, LINE_INDEX 값이 Decimal이면 int로 변환합니다.
-        records_upper = []
-        for rec in records:
+
+        # 키 대문자 변환 + Decimal 변환 처리
+        records = []
+        for row in rows:
             new_rec = {}
-            for key, value in rec.items():
-                new_key = key.upper()
-                if new_key == "LINE_INDEX" and isinstance(value, Decimal):
+            for key, value in zip(result.keys(), row):
+                key = key.upper()
+                if key == "LINE_INDEX" and isinstance(value, Decimal):
                     value = int(value)
-                new_rec[new_key] = value
-            records_upper.append(new_rec)
-        records = records_upper
-        logger.info(f"[OK] {target_date} 기준 데이터 {len(records)}건 조회됨")
+                new_rec[key] = value
+            records.append(new_rec)
+
+        logger.info(f"[완료] {target_date} 기준 데이터 {len(records)}건 조회됨")
+        logger.info("[종료] query_data_by_date")
         return records
+
     except Exception as e:
         logger.error(f"[ERROR] 데이터 조회 실패: {e}")
         traceback.print_exc()
@@ -70,18 +70,22 @@ def insert_postprocessed_result(json_path: str, in_params: dict) -> None:
     - None: DB 삽입 완료 후 반환값이 없습니다. (실패 시 예외를 발생시키며, 로그에 에러를 기록합니다)
     """
     logger = logging.getLogger("WRAPPER")
+    logger.info("[시작] insert_postprocessed_result")
+
     if not os.path.exists(json_path):
         logger.error(f"[ERROR] 후처리 JSON 파일이 존재하지 않습니다: {json_path}")
         raise FileNotFoundError(f"후처리 JSON 파일이 존재하지 않습니다: {json_path}")
+
     try:
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+
         summary = data["summary"]
         items = data["items"]
-
         conn = in_params["sqlalchemy_conn"]
-        # 1. Insert summary line (RPA_CCR_LINE_SUMM), including GUBUN
-        insert_summ_sql = text(f"""
+
+        # ✅ SAP HANA용 INSERT 문 (TO_DATE 사용하지 않음)
+        insert_summ_sql = text("""
             INSERT INTO RPA_CCR_LINE_SUMM (
                 FIID, GUBUN, LINE_INDEX, RECEIPT_INDEX, COMMON_YN, ATTACH_FILE,
                 COUNTRY, RECEIPT_TYPE, MERCHANT_NAME, MERCHANT_PHONE_NO,
@@ -91,17 +95,14 @@ def insert_postprocessed_result(json_path: str, in_params: dict) -> None:
             ) VALUES (
                 :FIID, :GUBUN, :LINE_INDEX, :RECEIPT_INDEX, :COMMON_YN, :ATTACH_FILE,
                 :COUNTRY, :RECEIPT_TYPE, :MERCHANT_NAME, :MERCHANT_PHONE_NO,
-                :DELIVERY_ADDR, TO_DATE(:TRANSACTION_DATE, 'YYYY-MM-DD'),
-                :TRANSACTION_TIME, :TOTAL_AMOUNT, :SUMTOTAL_AMOUNT,
-                :TAX_AMOUNT, :BIZ_NO, :RESULT_CODE, :RESULT_MESSAGE,
-                TO_DATE(:CREATE_DATE, 'YYYY-MM-DD HH24:MI:SS'),
-                TO_DATE(:UPDATE_DATE, 'YYYY-MM-DD HH24:MI:SS')
+                :DELIVERY_ADDR, :TRANSACTION_DATE, :TRANSACTION_TIME,
+                :TOTAL_AMOUNT, :SUMTOTAL_AMOUNT, :TAX_AMOUNT, :BIZ_NO,
+                :RESULT_CODE, :RESULT_MESSAGE, :CREATE_DATE, :UPDATE_DATE
             )
         """)
         conn.execute(insert_summ_sql, summary)
 
-        # 2. Insert each item line (RPA_CCR_LINE_ITEMS)
-        insert_item_sql = text(f"""
+        insert_item_sql = text("""
             INSERT INTO RPA_CCR_LINE_ITEMS (
                 FIID, LINE_INDEX, RECEIPT_INDEX, ITEM_INDEX,
                 ITEM_NAME, ITEM_QTY, ITEM_UNIT_PRICE, ITEM_TOTAL_PRICE,
@@ -109,19 +110,20 @@ def insert_postprocessed_result(json_path: str, in_params: dict) -> None:
             ) VALUES (
                 :FIID, :LINE_INDEX, :RECEIPT_INDEX, :ITEM_INDEX,
                 :ITEM_NAME, :ITEM_QTY, :ITEM_UNIT_PRICE, :ITEM_TOTAL_PRICE,
-                :CONTENTS, :COMMON_YN,
-                TO_DATE(:CREATE_DATE, 'YYYY-MM-DD HH24:MI:SS'),
-                TO_DATE(:UPDATE_DATE, 'YYYY-MM-DD HH24:MI:SS')
+                :CONTENTS, :COMMON_YN, :CREATE_DATE, :UPDATE_DATE
             )
         """)
+
         for item in items:
             conn.execute(insert_item_sql, item)
 
-        logger.info(f"✅ DB INSERT 성공: {json_path}")
+        logger.info(f"[완료] DB 저장 성공 - FIID={summary['FIID']}, RECEIPT_INDEX={summary['RECEIPT_INDEX']}")
+
     except Exception as e:
-        logger.error(f"❌ DB INSERT 실패: {e}")
+        logger.error(f"[ERROR] DB 저장 실패: {e}")
         traceback.print_exc()
-        raise
+
+    logger.info("[종료] insert_postprocessed_result")
 
 # (No __main__ testing code, as Oracle support is removed and HANA usage is configured in wrapper)
 if __name__ == "__main__":

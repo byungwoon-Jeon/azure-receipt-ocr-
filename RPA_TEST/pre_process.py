@@ -8,6 +8,13 @@ from ultralytics import YOLO
 
 logger = logging.getLogger("PRE_PRE_PROCESS")
 
+def validate_file_size(path: str):
+    logger.info("[시작] validate_file_size")
+    size = os.path.getsize(path)
+    if size >= 10 * 1024 * 1024:
+        raise ValueError(f"파일 크기가 10MB 이상입니다: {size} bytes")
+    logger.info("[종료] validate_file_size")
+
 def download_file_from_url(url: str, save_dir: str, is_file_path: bool = False) -> str:
     """
     지정한 URL로부터 파일을 다운로드하여 save_dir에 저장한 후, 저장된 파일 경로를 반환합니다.
@@ -20,18 +27,35 @@ def download_file_from_url(url: str, save_dir: str, is_file_path: bool = False) 
     출력:
     - str: 다운로드되어 저장된 파일의 경로.
     """
-    if is_file_path and not url.lower().startswith("http"):
-        url = "http://apv.skhynix.com" + url
-    if "@" in url:
-        url = url.split("@")[0]
-    os.makedirs(save_dir, exist_ok=True)
-    filename = os.path.basename(urlparse(url).path)
-    save_path = os.path.join(save_dir, filename)
-    response = requests.get(url, timeout=10)
-    response.raise_for_status()
-    with open(save_path, "wb") as f:
-        f.write(response.content)
-    return save_path
+    logger.info("[시작] download_file_from_url")
+    try:
+        if url.upper().startswith("R"):
+            logger.info("R로 시작하는 URL 무시됨")
+            return None
+
+        if is_file_path and not url.lower().startswith("http"):
+            url = "http://apv.skhynix.com" + url
+
+        if "@" in url:
+            url = url.split("@")[0]
+
+        os.makedirs(save_dir, exist_ok=True)
+        filename = os.path.basename(urlparse(url).path)
+        save_path = os.path.join(save_dir, filename)
+
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        with open(save_path, "wb") as f:
+            f.write(response.content)
+
+        validate_file_size(save_path)  # 10MB 초과 검사
+        logger.info("[종료] download_file_from_url")
+        return save_path
+
+    except Exception as e:
+        logger.error(f"[ERROR] 파일 다운로드 실패: {url} - {e}")
+        traceback.print_exc()
+        return None
 
 def convert_to_png(input_path: str, save_dir: str) -> str:
     """
@@ -44,11 +68,13 @@ def convert_to_png(input_path: str, save_dir: str) -> str:
     출력:
     - str: 변환된 PNG 이미지 파일의 경로.
     """
+    logger.info("[시작] convert_to_png")
     os.makedirs(save_dir, exist_ok=True)
     filename = os.path.splitext(os.path.basename(input_path))[0] + ".png"
     save_path = os.path.join(save_dir, filename)
     with Image.open(input_path) as img:
         img.convert("RGB").save(save_path, "PNG")
+    logger.info("[종료] convert_to_png")
     return save_path
 
 def crop_receipts_with_yolo(
@@ -84,61 +110,71 @@ def crop_receipts_with_yolo(
     출력:
     - list: 검출/크롭 결과 딕셔너리들의 리스트. 각 딕셔너리는 성공 시 "file_path" 및 입력 식별자(FIID, LINE_INDEX 등)를 포함하고, 검출 실패나 오류 시 "RESULT_CODE"와 "RESULT_MESSAGE"를 포함합니다.
     """
+    logger.info("[시작] crop_receipts_with_yolo")
     results = []
-    yolo_results = model(png_path)
-    boxes = yolo_results[0].boxes
+    try:
+        yolo_results = model(png_path)
+        boxes = yolo_results[0].boxes
 
-    if boxes is None or len(boxes) == 0:
-        results.append({
-            "FIID": fiid, "LINE_INDEX": line_index, "GUBUN": gubun,
-            "RECEIPT_INDEX": None, "COMMON_YN": common_yn,
-            "RESULT_CODE": "E001",
-            "RESULT_MESSAGE": "YOLO 탐지 결과 없음"
-        })
-        return results
-
-    if file_type == "ATTACH_FILE":
-        if len(boxes) > 1:
+        if boxes is None or len(boxes) == 0:
+            logger.warning("YOLO 탐지 결과 없음")
             results.append({
                 "FIID": fiid, "LINE_INDEX": line_index, "GUBUN": gubun,
                 "RECEIPT_INDEX": None, "COMMON_YN": common_yn,
-                "RESULT_CODE": "E002",
-                "RESULT_MESSAGE": f"YOLO 결과 {len(boxes)}개 발견 (ATTACH_FILE는 1개만 가능)"
+                "RESULT_CODE": "E001",
+                "RESULT_MESSAGE": "YOLO 탐지 결과 없음"
             })
+            logger.info("[종료] crop_receipts_with_yolo")
             return results
 
-        box_coords = boxes[0].xyxy[0].cpu().numpy()
-        x1, y1, x2, y2 = map(int, box_coords)
-        cropped_img = original_img.crop((x1, y1, x2, y2))
-        cropped_path = os.path.join(cropped_dir, f"{base_filename}.png")
-        cropped_img.save(cropped_path)
+        os.makedirs(cropped_dir, exist_ok=True)
 
-        results.append({
-            "FIID": fiid,
-            "LINE_INDEX": line_index,
-            "GUBUN": gubun,
-            "RECEIPT_INDEX": receipt_index if receipt_index is not None else 1,
-            "COMMON_YN": common_yn,
-            "file_path": cropped_path
-        })
+        if file_type == "ATTACH_FILE":
+            if len(boxes) > 1:
+                logger.warning(f"YOLO 결과 {len(boxes)}개 발견 (ATTACH_FILE는 1개만 가능)")
+                results.append({
+                    "FIID": fiid, "LINE_INDEX": line_index, "GUBUN": gubun,
+                    "RECEIPT_INDEX": None, "COMMON_YN": common_yn,
+                    "RESULT_CODE": "E002",
+                    "RESULT_MESSAGE": f"YOLO 결과 {len(boxes)}개 발견 (ATTACH_FILE는 1개만 가능)"
+                })
+                logger.info("[종료] crop_receipts_with_yolo")
+                return results
 
-    elif file_type == "FILE_PATH":
-        for idx, box in enumerate(boxes, start=1):
-            coords = box.xyxy[0].cpu().numpy()
-            x1, y1, x2, y2 = map(int, coords)
+            box_coords = boxes[0].xyxy[0].cpu().numpy()
+            x1, y1, x2, y2 = map(int, box_coords)
             cropped_img = original_img.crop((x1, y1, x2, y2))
-            cropped_path = os.path.join(cropped_dir, f"{base_filename}_{idx}.png")
+            cropped_path = os.path.join(cropped_dir, f"{base_filename}_receipt.png")
             cropped_img.save(cropped_path)
+            validate_file_size(cropped_path)  # 크롭 후 크기 체크
 
             results.append({
-                "FIID": fiid,
-                "LINE_INDEX": line_index,
-                "GUBUN": gubun,
-                "RECEIPT_INDEX": idx,
+                "FIID": fiid, "LINE_INDEX": line_index, "GUBUN": gubun,
+                "RECEIPT_INDEX": receipt_index or 1,
                 "COMMON_YN": common_yn,
                 "file_path": cropped_path
             })
 
+        elif file_type == "FILE_PATH":
+            for idx, box in enumerate(boxes, 1):
+                box_coords = box.xyxy[0].cpu().numpy()
+                x1, y1, x2, y2 = map(int, box_coords)
+                cropped_img = original_img.crop((x1, y1, x2, y2))
+                cropped_path = os.path.join(cropped_dir, f"{base_filename}_r{idx}.png")
+                cropped_img.save(cropped_path)
+                validate_file_size(cropped_path)
+
+                results.append({
+                    "FIID": fiid, "LINE_INDEX": line_index, "GUBUN": gubun,
+                    "RECEIPT_INDEX": idx,
+                    "COMMON_YN": common_yn,
+                    "file_path": cropped_path
+                })
+
+    except Exception as e:
+        logger.error(f"[ERROR] YOLO 크롭 오류: {e}")
+        traceback.print_exc()
+    logger.info("[종료] crop_receipts_with_yolo")
     return results
 
 def run_pre_pre_process(in_params: dict, db_record: dict) -> list:
@@ -153,48 +189,36 @@ def run_pre_pre_process(in_params: dict, db_record: dict) -> list:
     출력:
     - list: YOLO 검출 및 크롭 결과 딕셔너리들의 리스트. 영수증 이미지가 성공적으로 잘려진 경우 각 결과에는 "file_path"와 식별 정보(FIID, LINE_INDEX 등)가 포함되며, 검출 실패 시 "RESULT_CODE"와 "RESULT_MESSAGE"를 포함한 항목이 들어갑니다.
     """
+    logger.info("[시작] run_pre_pre_process")
     try:
-        for key in ["output_dir", "preprocessed_dir", "cropped_dir", "yolo_model_path"]:
-            assert key in in_params, f"[ERROR] '{key}' is required in in_params."
-        output_dir = in_params["output_dir"]
-        preproc_dir = in_params["preprocessed_dir"]
-        cropped_dir = in_params["cropped_dir"]
+        download_dir = in_params["download_dir"]
         model_path = in_params["yolo_model_path"]
-
-        os.makedirs(output_dir, exist_ok=True)
-        os.makedirs(preproc_dir, exist_ok=True)
-        os.makedirs(cropped_dir, exist_ok=True)
-
-        fiid = db_record.get("FIID")
-        line_index = db_record.get("LINE_INDEX")
-        gubun = db_record.get("GUBUN")
-        attach_url = db_record.get("ATTACH_FILE")
-        file_url = db_record.get("FILE_PATH")
-
-        if not attach_url and not file_url:
-            raise ValueError("ATTACH_FILE와 FILE_PATH가 모두 없음 - 처리 불가")
-
-        results = []
         model = YOLO(model_path)
 
-        for file_type, url in [("ATTACH_FILE", attach_url), ("FILE_PATH", file_url)]:
+        fiid = db_record["FIID"]
+        line_index = db_record["LINE_INDEX"]
+        gubun = db_record["GUBUN"]
+
+        results = []
+
+        for file_type in ["ATTACH_FILE", "FILE_PATH"]:
+            url = db_record.get(file_type)
             if not url:
-                logger.info(f"{file_type} URL 없음 → 스킵")
                 continue
-            try:
-                orig_path = download_file_from_url(url, output_dir, is_file_path=(file_type == "FILE_PATH"))
-                logger.info(f"[{file_type}] 다운로드 성공: {orig_path}")
 
-                png_path = convert_to_png(orig_path, preproc_dir)
-                logger.info(f"[{file_type}] PNG 변환 완료: {png_path}")
+            common_yn = 0 if file_type == "ATTACH_FILE" else 1
+            receipt_index = 1 if file_type == "ATTACH_FILE" else None
 
-                receipt_index = 1 if (file_type == "ATTACH_FILE" and file_url) else None
-                common_yn = 0 if file_type == "ATTACH_FILE" else 1
+            orig_path = download_file_from_url(url, download_dir, is_file_path=(file_type == "FILE_PATH"))
+            if not orig_path:
+                logger.info(f"[{file_type}] URL 다운로드 스킵됨")
+                continue
 
-                original_img = Image.open(png_path)
+            png_path = convert_to_png(orig_path, download_dir)
+            with Image.open(png_path) as original_img:
                 base_filename = os.path.splitext(os.path.basename(png_path))[0]
-
-                cropped_results = crop_receipts_with_yolo(
+                cropped_dir = os.path.join(download_dir, "cropped")
+                result = crop_receipts_with_yolo(
                     model=model,
                     png_path=png_path,
                     file_type=file_type,
@@ -207,19 +231,14 @@ def run_pre_pre_process(in_params: dict, db_record: dict) -> list:
                     common_yn=common_yn,
                     cropped_dir=cropped_dir
                 )
+                results.extend(result)
 
-                results.extend(cropped_results)
-
-            except Exception as e:
-                logger.error(f"[{file_type}] 처리 실패: {url} → {e}")
-                continue
-
-        if not results:
-            raise ValueError("이미지 전처리 및 YOLO 과정에서 결과를 얻지 못했습니다.")
+        logger.info("[종료] run_pre_pre_process")
         return results
 
     except Exception as e:
-        logger.error(f"[FATAL] 전처리 단계 실패: {traceback.format_exc()}")
+        logger.error(f"[ERROR] 전처리 실패: {e}")
+        traceback.print_exc()
         return []
 
 if __name__ == "__main__":
