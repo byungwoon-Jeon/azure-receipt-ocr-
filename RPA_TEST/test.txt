@@ -1,0 +1,33 @@
+import fitz  # PyMuPDF
+import os
+from PIL import Image
+
+def render_pdf_to_one_image(pdf_path, output_dir):
+    """PDF의 모든 페이지를 렌더링하여 하나의 이미지로 세로 병합"""
+    doc = fitz.open(pdf_path)
+    images = []
+    
+    for page_index in range(len(doc)):
+        page = doc.load_page(page_index)
+        # 고해상도 처리 (2배 확대)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        images.append(img)
+    doc.close()
+
+    # 이미지 병합
+    total_width = max(img.width for img in images)
+    total_height = sum(img.height for img in images)
+    merged_img = Image.new("RGB", (total_width, total_height), (255, 255, 255))
+
+    y_offset = 0
+    for img in images:
+        merged_img.paste(img, (0, y_offset))
+        y_offset += img.height
+
+    # 저장
+    base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    output_path = os.path.join(output_dir, f"{base_name}.png")
+    merged_img.save(output_path)
+
+    return output_path
