@@ -120,3 +120,38 @@ def extract_and_merge_images_from_xlsx(xlsx_path, output_dir):
         return merge_images_vertically(image_paths, merged_path)
     return None
 
+
+
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+import time
+import os
+
+# 다운로드 받을 디렉토리 지정
+download_dir = r"C:\Users\YourUser\Downloads\custom_folder"  # ⚠️ 원하는 경로로 변경
+
+# 크롬 옵션 설정
+chrome_options = Options()
+prefs = {
+    "download.default_directory": download_dir,  # 다운로드 위치 설정
+    "download.prompt_for_download": False,       # 다운로드 시 팝업 비활성화
+    "download.directory_upgrade": True,
+    "safebrowsing.enabled": True
+}
+chrome_options.add_experimental_option("prefs", prefs)
+chrome_options.add_argument("--start-maximized")
+
+# ChromeDriver 경로
+driver_path = r"C:\경로\chromedriver.exe"  # ⚠️ 실제 경로로 수정
+driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
+
+# 🔗 다운로드 링크 접속
+url = "https://example.com/your_file_download_link"
+driver.get(url)
+
+# 다운로드 대기 (파일 용량에 따라 조절)
+time.sleep(5)
+
+driver.quit()
+
