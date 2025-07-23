@@ -1,0 +1,157 @@
+import fitz  # PyMuPDF
+import os
+from PIL import Image
+
+def render_pdf_to_one_image(pdf_path, output_dir):
+    """PDF의 모든 페이지를 렌더링하여 하나의 이미지로 세로 병합"""
+    doc = fitz.open(pdf_path)
+    images = []
+    
+    for page_index in range(len(doc)):
+        page = doc.load_page(page_index)
+        # 고해상도 처리 (2배 확대)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        images.append(img)
+    doc.close()
+
+    # 이미지 병합
+    total_width = max(img.width for img in images)
+    total_height = sum(img.height for img in images)
+    merged_img = Image.new("RGB", (total_width, total_height), (255, 255, 255))
+
+    y_offset = 0
+    for img in images:
+        merged_img.paste(img, (0, y_offset))
+        y_offset += img.height
+
+    # 저장
+    base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    output_path = os.path.join(output_dir, f"{base_name}.png")
+    merged_img.save(output_path)
+
+    return output_path
+
+
+import zipfile
+import os
+from PIL import Image
+
+def merge_images_vertically(image_paths, output_path):
+    images = [Image.open(p) for p in image_paths]
+    widths = [img.width for img in images]
+    heights = [img.height for img in images]
+
+    max_width = max(widths)
+    total_height = sum(heights)
+
+    merged_img = Image.new('RGB', (max_width, total_height), (255, 255, 255))
+    y_offset = 0
+    for img in images:
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        merged_img.paste(img, (0, y_offset))
+        y_offset += img.height
+
+    merged_img.save(output_path)
+    return output_path
+
+def extract_and_merge_images_from_docx(docx_path, output_dir):
+    image_paths = []
+    with zipfile.ZipFile(docx_path, 'r') as z:
+        for file_name in z.namelist():
+            if file_name.startswith("word/media/"):
+                _, image_filename = file_name.split("word/media/")
+                output_path = os.path.join(output_dir, image_filename)
+                z.extract(file_name, output_dir)
+                extracted_path = os.path.join(output_dir, file_name)
+                os.replace(extracted_path, output_path)
+                image_paths.append(output_path)
+
+    if image_paths:
+        base_name = os.path.splitext(os.path.basename(docx_path))[0]
+        merged_path = os.path.join(output_dir, f"{base_name}.png")
+        return merge_images_vertically(image_paths, merged_path)
+    return None
+
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+import os
+
+def extract_and_merge_images_from_pptx(pptx_path, output_dir):
+    prs = Presentation(pptx_path)
+    image_paths = []
+    slide_index = 0
+    for slide in prs.slides:
+        slide_index += 1
+        image_count = 0
+        for shape in slide.shapes:
+            if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                image_count += 1
+                image_data = shape.image.blob
+                image_ext = shape.image.ext
+                output_path = os.path.join(output_dir, f"slide{slide_index}_image{image_count}.{image_ext}")
+                with open(output_path, 'wb') as img_file:
+                    img_file.write(image_data)
+                image_paths.append(output_path)
+
+    if image_paths:
+        base_name = os.path.splitext(os.path.basename(pptx_path))[0]
+        merged_path = os.path.join(output_dir, f"{base_name}.png")
+        return merge_images_vertically(image_paths, merged_path)
+    return None
+
+
+def extract_and_merge_images_from_xlsx(xlsx_path, output_dir):
+    image_paths = []
+    with zipfile.ZipFile(xlsx_path, 'r') as z:
+        for file_name in z.namelist():
+            if file_name.startswith("xl/media/"):
+                _, image_filename = file_name.split("xl/media/")
+                output_path = os.path.join(output_dir, image_filename)
+                z.extract(file_name, output_dir)
+                extracted_path = os.path.join(output_dir, file_name)
+                os.replace(extracted_path, output_path)
+                image_paths.append(output_path)
+
+    if image_paths:
+        base_name = os.path.splitext(os.path.basename(xlsx_path))[0]
+        merged_path = os.path.join(output_dir, f"{base_name}.png")
+        return merge_images_vertically(image_paths, merged_path)
+    return None
+
+
+
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+import time
+import os
+
+# 다운로드 받을 디렉토리 지정
+download_dir = r"C:\Users\YourUser\Downloads\custom_folder"  # ⚠️ 원하는 경로로 변경
+
+# 크롬 옵션 설정
+chrome_options = Options()
+prefs = {
+    "download.default_directory": download_dir,  # 다운로드 위치 설정
+    "download.prompt_for_download": False,       # 다운로드 시 팝업 비활성화
+    "download.directory_upgrade": True,
+    "safebrowsing.enabled": True
+}
+chrome_options.add_experimental_option("prefs", prefs)
+chrome_options.add_argument("--start-maximized")
+
+# ChromeDriver 경로
+driver_path = r"C:\경로\chromedriver.exe"  # ⚠️ 실제 경로로 수정
+driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
+
+# 🔗 다운로드 링크 접속
+url = "https://example.com/your_file_download_link"
+driver.get(url)
+
+# 다운로드 대기 (파일 용량에 따라 조절)
+time.sleep(5)
+
+driver.quit()
+
