@@ -8,6 +8,165 @@ from ultralytics import YOLO
 
 logger = logging.getLogger("PRE_PRE_PROCESS")
 
+# ============================================
+# 📌 DRM 해제 함수
+# ============================================
+def call_drm_decode_api(file_path: str) -> str:
+    """
+    DRM 해제 API 호출 → 성공 시 해제된 파일 경로 반환, 실패 시 원본 경로 반환
+    """
+    logger.info("[시작] call_drm_decode_api")
+    url = "http://10.158.120.68:8089/drm/decode"
+    headers = {"Content-Type": "application/json"}
+    payload = {"fileLocation": file_path}
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("status") == "ok" and res_json.get("data"):
+                logger.info(f"[DRM] 해제 성공 → {res_json['data']}")
+                return res_json["data"]
+        logger.warning(f"[DRM] 해제 실패 또는 DRM 아님 → 원본 유지: {file_path}")
+    except Exception as e:
+        logger.error(f"[ERROR] DRM 해제 오류: {e}")
+        traceback.print_exc()
+
+    logger.info("[종료] call_drm_decode_api")
+    return file_path
+
+# ============================================
+# 📌 문서 이미지 추출 함수
+# ============================================
+def extract_images_from_document(file_path: str) -> list:
+    """
+    PDF, DOCX, PPTX, XLSX 문서로부터 이미지 추출
+    → PIL.Image 리스트 반환
+    """
+    logger.info("[시작] extract_images_from_document")
+    ext = os.path.splitext(file_path)[1].lower()
+    images = []
+
+    try:
+        if ext == ".pdf":
+            doc = fitz.open(file_path)
+            try:
+                for page in doc:
+                    pix = page.get_pixmap()
+                    img_bytes = pix.tobytes(output="png")
+                    img = Image.open(io.BytesIO(img_bytes))
+                    images.append(img.convert("RGB"))
+            finally:
+                doc.close()
+        elif ext in [".docx", ".pptx", ".xlsx"]:
+            media_path = {
+                ".docx": "word/media/",
+                ".pptx": "ppt/media/",
+                ".xlsx": "xl/media/"
+            }[ext]
+
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                entries = sorted(
+                    [f for f in zf.namelist() if f.lower().startswith(media_path) and f.lower().endswith((".png", ".jpg", ".jpeg"))]
+                )
+                for name in entries:
+                    try:
+                        with zf.open(name) as f:
+                            img = Image.open(f)
+                            images.append(img.convert("RGB"))
+                    except Exception as e:
+                        logger.warning(f"[WARN] 이미지 추출 실패: {name} - {e}")
+                        continue
+        else:
+            logger.warning(f"[WARN] 지원하지 않는 문서 확장자: {ext}")
+    except Exception as e:
+        logger.error(f"[ERROR] 문서 이미지 추출 오류: {e}")
+        traceback.print_exc()
+
+    logger.info(f"[종료] extract_images_from_document → {len(images)}개 이미지 추출됨")
+    return images
+
+# ============================================
+# 📌 이미지 병합 함수
+# ============================================
+def merge_images_vertically(images: list, output_path: str) -> str:
+    """
+    이미지 리스트를 세로로 병합하여 output_path에 저장
+    """
+    logger.info("[시작] merge_images_vertically")
+
+    if not images:
+        raise ValueError("이미지 리스트가 비어 있습니다")
+
+    widths = [img.width for img in images]
+    heights = [img.height for img in images]
+    max_width = max(widths)
+    total_height = sum(heights)
+
+    merged_img = Image.new('RGB', (max_width, total_height), (255, 255, 255))
+    y_offset = 0
+    for img in images:
+        merged_img.paste(img, (0, y_offset))
+        y_offset += img.height
+
+    merged_img.save(output_path)
+    logger.info(f"[종료] 병합 이미지 저장 완료: {output_path}")
+    return output_path
+
+
+# ============================================
+# 📌 문서 파일 전체 처리 함수 (DRM + 추출 + 병합)
+# ============================================
+def process_document_file(file_path: str, merged_doc_dir: str) -> str:
+    """
+    문서 파일(PDF, DOCX, PPTX, XLSX)을 DRM 해제 → 이미지 추출 → 병합하여 PNG 저장
+    병합된 이미지는 merged_doc_dir에 <파일명>_merged.png로 저장됨
+
+    반환값:
+    - 병합 이미지 경로 (성공 시)
+    - None (실패 시)
+    """
+    logger.info("[시작] process_document_file")
+    try:
+        # 확장자 검사
+        ext = Path(file_path).suffix.lower()
+        if ext not in [".pdf", ".docx", ".pptx", ".xlsx"]:
+            logger.warning(f"[SKIP] 문서 아님: {file_path}")
+            return None
+
+        # DRM 해제 시도
+        decoded_path = call_drm_decode_api(file_path)
+
+        # 이미지 추출
+        images = extract_images_from_document(decoded_path)
+        if not images:
+            logger.warning("❌ 이미지 추출 실패 또는 없음")
+            return None
+
+        # 병합 이미지 저장 경로 생성
+        os.makedirs(merged_doc_dir, exist_ok=True)
+        base_name = Path(file_path).stem
+        merged_path = os.path.join(merged_doc_dir, f"{base_name}_merged.png")
+
+        # 이미지 병합
+        merge_images_vertically(images, merged_path)
+
+        # DRM 해제 파일 삭제
+        if decoded_path != file_path and os.path.exists(decoded_path):
+            try:
+                os.remove(decoded_path)
+                logger.info(f"[정리] DRM 해제 파일 삭제: {decoded_path}")
+            except Exception as e:
+                logger.warning(f"[정리 실패] DRM 해제 파일 삭제 오류: {e}")
+
+        logger.info("[종료] process_document_file")
+        return merged_path
+
+    except Exception as e:
+        logger.error(f"[ERROR] 문서 처리 중 오류: {e}")
+        traceback.print_exc()
+        return None
+
 def validate_file_size(path: str):
     logger.info("[시작] validate_file_size")
     size = os.path.getsize(path)
@@ -179,26 +338,25 @@ def crop_receipts_with_yolo(
 
 def run_pre_pre_process(in_params: dict, db_record: dict) -> list:
     """
-    주어진 데이터베이스 레코드(db_record)에 대해 전처리 및 YOLO 모델 기반 이미지를 분할(crop)하는 과정을 수행합니다.
-    ATTACH_FILE와 FILE_PATH 두 유형에 대해 각각 이미지를 다운로드 및 PNG 변환한 후, YOLO를 통해 영수증 영역을 잘라냅니다.
+    전처리 수행: 이미지/문서 다운로드 → PNG 변환 또는 병합 → YOLO 크롭 → 결과 리스트 반환
 
     입력:
-    - in_params (dict): 전처리 및 모델 관련 설정값들이 담긴 딕셔너리 (output_dir, preprocessed_dir, cropped_dir, yolo_model_path 등 필수).
-    - db_record (dict): 처리 대상 DB 레코드 (FIID, LINE_INDEX, GUBUN, ATTACH_FILE, FILE_PATH 등의 키를 포함).
+    - in_params: 설정값 (경로, YOLO 모델 경로 등 포함)
+    - db_record: DB에서 가져온 단일 레코드 (FIID, GUBUN 등 포함)
 
     출력:
-    - list: YOLO 검출 및 크롭 결과 딕셔너리들의 리스트. 영수증 이미지가 성공적으로 잘려진 경우 각 결과에는 "file_path"와 식별 정보(FIID, LINE_INDEX 등)가 포함되며, 검출 실패 시 "RESULT_CODE"와 "RESULT_MESSAGE"를 포함한 항목이 들어갑니다.
+    - YOLO 결과 리스트 (file_path 포함 or RESULT_CODE 포함)
     """
     logger.info("[시작] run_pre_pre_process")
     try:
         download_dir = in_params["download_dir"]
         model_path = in_params["yolo_model_path"]
+        merged_doc_dir = in_params.get("merged_doc_dir", os.path.join(download_dir, "document_merged"))
         model = YOLO(model_path)
 
         fiid = db_record["FIID"]
         line_index = db_record["LINE_INDEX"]
         gubun = db_record["GUBUN"]
-
         results = []
 
         for file_type in ["ATTACH_FILE", "FILE_PATH"]:
@@ -214,7 +372,16 @@ def run_pre_pre_process(in_params: dict, db_record: dict) -> list:
                 logger.info(f"[{file_type}] URL 다운로드 스킵됨")
                 continue
 
-            png_path = convert_to_png(orig_path, download_dir)
+            ext = os.path.splitext(orig_path)[1].lower()
+            if ext in [".pdf", ".docx", ".pptx", ".xlsx"]:
+                merged_path = process_document_file(orig_path, merged_doc_dir)
+                if not merged_path:
+                    logger.warning(f"[{file_type}] 문서 처리 실패 또는 이미지 없음")
+                    continue
+                png_path = convert_to_png(merged_path, download_dir)
+            else:
+                png_path = convert_to_png(orig_path, download_dir)
+
             with Image.open(png_path) as original_img:
                 base_filename = os.path.splitext(os.path.basename(png_path))[0]
                 cropped_dir = os.path.join(download_dir, "cropped")
