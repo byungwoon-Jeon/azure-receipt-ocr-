@@ -155,3 +155,74 @@ time.sleep(5)
 
 driver.quit()
 
+import os
+import time
+from selenium import webdriver
+
+def download_file_with_chrome(download_path, file_url, user_data_dir, profile_dir):
+    """Selenium을 사용하여 Chrome 브라우저로 파일을 다운로드하는 함수.
+
+    이 함수는 사용자가 지정한 Chrome 사용자 프로필을 로드하여 로그인 세션(SAML/SSO 등)을 유지한 상태로
+    주어진 파일 URL에 접속하고, 지정한 경로에 파일을 다운로드합니다.
+    Chrome이 파일을 다운로드하는 동안 임시로 생성하는 `.crdownload` 확장자가 제거될 때까지 대기하여
+    다운로드 완료를 확인한 후 최종 파일 이름을 반환합니다.
+
+    이 함수는 WebDriver 인스턴스를 함수 내부에서 초기화하고 종료하므로,
+    멀티쓰레드 환경에서도 안전하게 호출하여 사용할 수 있습니다.
+
+    파라미터:
+        download_path (str): 파일을 다운로드할 대상 디렉토리 경로.
+        file_url (str): 다운로드할 파일의 URL.
+        user_data_dir (str): 사용할 Chrome 사용자 데이터 디렉토리의 경로.
+        profile_dir (str): 사용할 Chrome 프로필 디렉토리 이름.
+
+    반환:
+        str: 다운로드가 완료된 후 저장된 파일의 파일명.
+    """
+    # ChromeOptions 설정: 지정한 사용자 데이터 디렉토리와 프로필 사용
+    options = webdriver.ChromeOptions()
+    options.add_argument(f"--user-data-dir={user_data_dir}")
+    options.add_argument(f"--profile-directory={profile_dir}")
+    # (필요에 따라) Headless 모드 및 기타 옵션 설정
+    options.add_argument("--headless")  # UI 없이 실행하는 headless 모드
+    options.add_argument("--no-sandbox")  # 리눅스 권한 문제를 피하기 위한 설정
+    options.add_argument("--disable-dev-shm-usage")  # /dev/shm의 공간 부족 문제 방지
+    
+    # 파일 다운로드 경로 및 브라우저 환경 설정 지정
+    prefs = {
+        "download.default_directory": download_path,  # 지정한 경로를 기본 다운로드 디렉토리로 설정
+        "profile.default_content_settings.popups": 0,  # 다운로드 팝업 비활성화
+        "download.prompt_for_download": False,         # 다운로드 대화창 표시 안 함
+        "download.directory_upgrade": True,            # 기존 디렉토리에 바로 다운로드
+        "safebrowsing.enabled": False,                 # 안전 브라우징 기능 비활성화 (파일 다운로드 차단 해제)
+        "safebrowsing_for_trusted_sources_enabled": False  # 신뢰된 소스에 대한 안전 브라우징 비활성화
+    }
+    options.add_experimental_option("prefs", prefs)
+    
+    # Chrome WebDriver를 생성하고 브라우저를 실행
+    driver = webdriver.Chrome(options=options)
+    try:
+        # 지정한 파일 URL로 이동하여 다운로드 시작
+        driver.get(file_url)
+        
+        # .crdownload 임시 파일이 사라질 때까지 대기하여 다운로드 완료를 확인
+        while any(filename.endswith(".crdownload") for filename in os.listdir(download_path)):
+            time.sleep(1)  # 1초 대기 후 다시 확인
+        
+        # 다운로드가 완료되면 디렉터리에서 최종 파일 이름을 찾음
+        downloaded_files = [f for f in os.listdir(download_path) if not f.endswith(".crdownload")]
+        if not downloaded_files:
+            # 다운로드 완료 후에도 파일이 없다면 예외 발생
+            raise FileNotFoundError("다운로드가 완료되었지만 디렉토리에 파일이 존재하지 않습니다.")
+        
+        downloaded_file_name = downloaded_files[0]
+        return downloaded_file_name
+    finally:
+        # 작업 완료 후 브라우저 종료하여 WebDriver 리소스 해제
+        driver.quit()
+
+
+
+
+
+
