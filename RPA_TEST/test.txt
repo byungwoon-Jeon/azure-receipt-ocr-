@@ -222,7 +222,84 @@ def download_file_with_chrome(download_path, file_url, user_data_dir, profile_di
         driver.quit()
 
 
+import os
+import time
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 
+def download_file_with_chrome(
+    chrome_driver_path: str,
+    download_path: str,
+    file_url: str,
+    user_data_dir: str,
+    profile_dir: str,
+    timeout: int = 30
+) -> str:
+    """
+    이미 로그인된 크롬 프로필을 활용해 SSO 인증이 필요한 파일을 자동 다운로드하고,
+    다운로드가 완료된 파일명을 반환하는 함수.
+
+    [파라미터]
+    chrome_driver_path (str): chromedriver.exe의 전체 경로
+    download_path (str): 파일이 저장될 다운로드 경로 (미리 존재해야 함)
+    file_url (str): 다운로드할 파일의 URL
+    user_data_dir (str): Chrome의 유저 데이터 디렉토리 (e.g. User Data 경로)
+    profile_dir (str): 사용할 크롬 프로필 디렉토리 이름 (e.g. "Default", "Profile 1")
+    timeout (int): 다운로드 완료까지 대기할 최대 시간(초)
+
+    [반환]
+    str: 다운로드된 최종 파일의 전체 경로
+
+    [예외]
+    TimeoutError: 지정된 시간 안에 다운로드가 완료되지 않으면 발생
+    FileNotFoundError: 다운로드가 완료된 파일이 발견되지 않으면 발생
+    """
+    # Chrome 옵션 구성
+    options = Options()
+    options.add_argument(f"--user-data-dir={user_data_dir}")
+    options.add_argument(f"--profile-directory={profile_dir}")
+    # UI 있는 상태로 실행 (필요시 headless로 변경 가능)
+    # options.add_argument("--headless")
+
+    # 다운로드 설정
+    prefs = {
+        "download.default_directory": download_path,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True
+    }
+    options.add_experimental_option("prefs", prefs)
+
+    # ChromeDriver 경로 설정
+    service = Service(executable_path=chrome_driver_path)
+    driver = webdriver.Chrome(service=service, options=options)
+
+    try:
+        # 다운로드 링크 접근 → 자동 다운로드 유도
+        driver.get(file_url)
+
+        # 다운로드 완료 대기
+        elapsed = 0
+        while elapsed < timeout:
+            files = os.listdir(download_path)
+            crdownload_exists = any(f.endswith(".crdownload") for f in files)
+
+            if not crdownload_exists and files:
+                # 다운로드 완료된 첫 번째 파일 반환
+                final_file = max(
+                    [os.path.join(download_path, f) for f in files],
+                    key=os.path.getctime
+                )
+                return final_file
+
+            time.sleep(1)
+            elapsed += 1
+
+        raise TimeoutError("다운로드가 제한 시간 내에 완료되지 않았습니다.")
+    
+    finally:
+        driver.quit()
 
 
 
