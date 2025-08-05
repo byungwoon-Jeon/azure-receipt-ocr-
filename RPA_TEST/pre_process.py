@@ -6,7 +6,52 @@ from urllib.parse import urlparse
 from PIL import Image
 from ultralytics import YOLO
 
+from pathlib import Path
+from loguru import logger
+from playwright.sync_api import sync_playwright, TimeoutError
+
 logger = logging.getLogger("PRE_PRE_PROCESS")
+
+def download_r_link_with_sso(url: str, sso_id: str, sso_pw: str, download_dir: str = r"C:\\temp\\download_docs", headless: bool = False) -> str:
+    """
+    SSO 로그인 후 EGSS R 링크에서 파일 다운로드
+    :return: 다운로드된 파일 경로 (성공 시) / None (실패 시)
+    """
+    try:
+        download_path = Path(download_dir)
+        download_path.mkdir(parents=True, exist_ok=True)
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=headless)
+            context = browser.new_context(accept_downloads=True)
+            page = context.new_page()
+
+            logger.info(f"[EGSS] 접속 시도: {url}")
+            page.goto(url)
+            page.fill("#mid", sso_id)
+            page.fill("#PASSWORD_INPUT", sso_pw)
+
+            with page.expect_download(timeout=15000) as download_info:
+                page.click("#loginBtn")
+            download = download_info.value
+
+            saved_path = download_path / download.suggested_filename
+            download.save_as(saved_path)
+            logger.info(f"[EGSS] 다운로드 완료: {saved_path}")
+            return str(saved_path)
+
+    except TimeoutError:
+        logger.error("[EGSS] 다운로드 타임아웃")
+    except Exception as e:
+        logger.exception(f"[EGSS] 다운로드 실패: {e}")
+    finally:
+        try:
+            browser.close()
+        except Exception:
+            pass
+
+    return None
+
 
 # ============================================
 # 📌 DRM 해제 함수
@@ -189,8 +234,13 @@ def download_file_from_url(url: str, save_dir: str, is_file_path: bool = False) 
     logger.info("[시작] download_file_from_url")
     try:
         if url.upper().startswith("R"):
-            logger.info("R로 시작하는 URL 무시됨")
-            return None
+            logger.info("[EGSS] R로 시작하는 EGSS URL 탐지됨 → SSO 로그인 다운로드 시도")
+            sso_id = os.getenv("EGSS_SSO_ID", "")
+            sso_pw = os.getenv("EGSS_SSO_PW", "")
+            if not sso_id or not sso_pw:
+                logger.warning("[EGSS] 환경변수 EGSS_SSO_ID 또는 EGSS_SSO_PW 누락 → 다운로드 스킵")
+                return None
+            return download_r_link_with_sso(url, sso_id, sso_pw, save_dir)
 
         if is_file_path and not url.lower().startswith("http"):
             url = "http://apv.skhynix.com" + url
