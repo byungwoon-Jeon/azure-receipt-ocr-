@@ -116,8 +116,15 @@ def insert_postprocessed_result(json_path: str, in_params: dict) -> None:
 
         for item in items:
             conn.execute(insert_item_sql, item)
+        # ✅ 수정 코드 (비어있을 경우 구분해서 출력):
+        item_count = len(items)
 
-        logger.info(f"[완료] DB 저장 성공 - FIID={summary['FIID']}, RECEIPT_INDEX={summary['RECEIPT_INDEX']}")
+        if item_count == 0:
+            logger.warning(f"[완료] DB 저장 - FIID={summary['FIID']}, RECEIPT_INDEX={summary['RECEIPT_INDEX']} (⚠️ 품목 없음)")
+        else:
+            logger.info(f"[완료] DB 저장 - FIID={summary['FIID']}, RECEIPT_INDEX={summary['RECEIPT_INDEX']}, ITEMS_INSERTED={item_count}")
+        
+        conn.commit()
 
     except Exception as e:
         logger.error(f"[ERROR] DB 저장 실패: {e}")

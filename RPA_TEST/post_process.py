@@ -90,7 +90,10 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
                     "ITEM_QTY": str(obj.get("Quantity", {}).get("valueNumber")) if obj.get("Quantity") else None,
                     "ITEM_UNIT_PRICE": str(obj.get("Price", {}).get("valueCurrency", {}).get("amount")) if obj.get("Price") else None,
                     "ITEM_TOTAL_PRICE": str(obj.get("TotalPrice", {}).get("valueCurrency", {}).get("amount")) if obj.get("TotalPrice") else None,
-                    "CONTENTS": json.dumps(obj, ensure_ascii=False)
+                    "CONTENTS": json.dumps(obj, ensure_ascii=False),
+                    "COMMON_YN": common_yn,                       # ✅ 추가
+                    "CREATE_DATE": now_str,                       # ✅ 추가
+                    "UPDATE_DATE": now_str                        # ✅ 추가
                 })
 
         # 결과 저장
@@ -114,14 +117,26 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
 
         error_path = os.path.join(in_params.get("error_json_dir", "./error_json"), f"fail_{record['FIID']}_{record['LINE_INDEX']}.json")
         os.makedirs(os.path.dirname(error_path), exist_ok=True)
+        #✅ 수정 코드:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        error_summary = {
+            "FIID": record.get("FIID"),
+            "LINE_INDEX": record.get("LINE_INDEX"),
+            "RECEIPT_INDEX": record.get("RECEIPT_INDEX"),
+            "COMMON_YN": record.get("COMMON_YN"),
+            "GUBUN": record.get("GUBUN"),
+            "ATTACH_FILE": record.get("ATTACH_FILE"),
+            "COUNTRY": None, "RECEIPT_TYPE": None, "MERCHANT_NAME": None, "MERCHANT_PHONE_NO": None,
+            "DELIVERY_ADDR": None, "TRANSACTION_DATE": None, "TRANSACTION_TIME": None,
+            "TOTAL_AMOUNT": None, "SUMTOTAL_AMOUNT": None, "TAX_AMOUNT": None, "BIZ_NO": None,
+            "RESULT_CODE": "POST_ERR",
+            "RESULT_MESSAGE": str(e),
+            "CREATE_DATE": now_str,
+            "UPDATE_DATE": now_str
+        }
+
         with open(error_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "FIID": record.get("FIID"),
-                "LINE_INDEX": record.get("LINE_INDEX"),
-                "RECEIPT_INDEX": record.get("RECEIPT_INDEX"),
-                "RESULT_CODE": "POST_ERR",
-                "RESULT_MESSAGE": str(e)
-            }, f, ensure_ascii=False, indent=2)
+            json.dump({"summary": error_summary, "items": []}, f, ensure_ascii=False, indent=2)
 
         return error_path
 

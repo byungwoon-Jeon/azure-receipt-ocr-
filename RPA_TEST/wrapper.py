@@ -32,10 +32,36 @@ def process_single_record(record: dict, in_params: dict):
                 logger.warning(f"[SKIP] YOLO 오류 발생: {cropped}")
                 continue
 
-            # OCR 실행
+            # OCR 실행 ✅ 수정 코드:
             ocr_result = run_azure_ocr(in_params, cropped)
             if ocr_result.get("RESULT_CODE") == "AZURE_ERR":
-                logger.warning(f"[SKIP] Azure OCR 오류 발생: {ocr_result}")
+                logger.warning(f"[ERROR] Azure OCR 실패 → 오류 summary 저장 시도")
+
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                error_summary = {
+                    "FIID": cropped.get("FIID"),
+                    "LINE_INDEX": cropped.get("LINE_INDEX"),
+                    "RECEIPT_INDEX": cropped.get("RECEIPT_INDEX"),
+                    "COMMON_YN": cropped.get("COMMON_YN"),
+                    "GUBUN": cropped.get("GUBUN"),
+                    "ATTACH_FILE": record.get("ATTACH_FILE"),
+                    "COUNTRY": None, "RECEIPT_TYPE": None, "MERCHANT_NAME": None, "MERCHANT_PHONE_NO": None,
+                    "DELIVERY_ADDR": None, "TRANSACTION_DATE": None, "TRANSACTION_TIME": None,
+                    "TOTAL_AMOUNT": None, "SUMTOTAL_AMOUNT": None, "TAX_AMOUNT": None, "BIZ_NO": None,
+                    "RESULT_CODE": ocr_result.get("RESULT_CODE"),
+                    "RESULT_MESSAGE": ocr_result.get("RESULT_MESSAGE"),
+                    "CREATE_DATE": now_str,
+                    "UPDATE_DATE": now_str
+                }
+
+                error_result_path = os.path.join(
+                    in_params["post_json_dir"],
+                    f"fail_{error_summary['FIID']}_{error_summary['LINE_INDEX']}_{error_summary['RECEIPT_INDEX']}_post.json"
+                )
+                with open(error_result_path, "w", encoding="utf-8") as f:
+                    json.dump({"summary": error_summary, "items": []}, f, ensure_ascii=False, indent=2)
+
+                insert_postprocessed_result(error_result_path, in_params)
                 continue
 
             # 후처리 JSON 경로 구성
