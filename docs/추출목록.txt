@@ -1,0 +1,45 @@
+영수증 OCR 결과 추출 항목 보고서
+작성일: 2025-08-07
+============================================================
+
+[1] 요약 정보 테이블 (RPA_CCR_LINE_SUMM)
+------------------------------------------------------------
+컬럼명               | 출처           | 지정 주체         | 설명
+------------------------------------------------------------
+FIID                 | 원본 DB         | DB에서 조회        | 문서 고유 ID
+LINE_INDEX           | 원본 DB         | DB에서 조회        | 라인아이템 순번
+RECEIPT_INDEX        | YOLO          | 우리가 지정         | YOLO로 크롭한 순서 기준 영수증 인덱스
+COMMON_YN            | 비즈 로직         | 우리가 지정         | 공통 여부 (Y/N)
+GUBUN                | 원본 DB         | DB에서 조회        | 공통파일건수와 라인아이템건수 비교 결과
+COUNTRY              | Azure OCR     | Azure 추출       | 거래 국가
+RECEIPT_TYPE         | Azure OCR     | Azure 추출       | 영수증 유형
+MERCHANT_NAME        | Azure OCR     | Azure 추출       | 상점 이름
+MERCHANT_PHONE_NO    | Azure OCR     | Azure 추출       | 상점 전화번호
+DELIVERY_ADDR        | OCR 후처리       | 우리가 지정         | 배달 주소 (JSON에서 추출)
+TRANSACTION_DATE     | Azure OCR     | Azure 추출       | 거래 일자
+TRANSACTION_TIME     | Azure OCR     | Azure 추출       | 거래 시간
+TOTAL_AMOUNT         | Azure OCR     | Azure 추출       | 총 결제 금액
+SUMTOTAL_AMOUNT      | Azure OCR     | Azure 추출       | 세금 제외 금액
+TAX_AMOUNT           | Azure OCR     | Azure 추출       | 세금 금액
+BIZ_NO               | OCR 후처리       | 우리가 지정         | 사업자 번호 (JSON에서 추출)
+RESULT_CODE          | 후처리 로직        | 우리가 지정         | 결과 코드
+RESULT_MESSAGE       | 후처리 로직        | 우리가 지정         | 에러 메시지
+CREATE_DATE          | 코드 로직         | 우리가 생성         | 생성 일시
+UPDATE_DATE          | 코드 로직         | 우리가 생성         | 수정 일시
+
+[2] 품목 정보 테이블 (RPA_CCR_LINE_ITEMS)
+------------------------------------------------------------
+컬럼명               | 출처           | 지정 주체         | 설명
+------------------------------------------------------------
+FIID                 | 원본 DB         | DB에서 조회        | 문서 고유 ID
+LINE_INDEX           | 원본 DB         | DB에서 조회        | 라인아이템 순번
+RECEIPT_INDEX        | YOLO          | 우리가 지정         | YOLO로 크롭한 순서 기준 영수증 인덱스
+ITEM_INDEX           | Azure OCR     | Azure 추출       | 품목 순번
+ITEM_NAME            | Azure OCR     | Azure 추출       | 품목 이름
+ITEM_QTY             | Azure OCR     | Azure 추출       | 수량
+ITEM_UNIT_PRICE      | Azure OCR     | Azure 추출       | 단가
+ITEM_TOTAL_PRICE     | Azure OCR     | Azure 추출       | 총액
+CONTENTS             | Azure OCR     | Azure 추출       | OCR 전체 원문 텍스트
+COMMON_YN            | 비즈 로직         | 우리가 지정         | 공통 여부 (Y/N)
+CREATE_DATE          | 코드 로직         | 우리가 생성         | 생성 일시
+UPDATE_DATE          | 코드 로직         | 우리가 생성         | 수정 일시
