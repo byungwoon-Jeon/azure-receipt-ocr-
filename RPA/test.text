@@ -1,0 +1,24 @@
+import json
+import os
+import logging
+
+logger = logging.getLogger(__name__)
+
+def load_azure_config(json_path: str) -> dict:
+    """
+    Azure 및 SSO 정보 로드
+    :param json_path: 설정 파일 경로
+    :return: dict 형태의 설정 값
+    """
+    if not os.path.exists(json_path):
+        logger.error(f"Azure 설정 파일이 존재하지 않습니다: {json_path}")
+        raise FileNotFoundError(f"Config file not found: {json_path}")
+    
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        logger.info(f"Azure 설정 로드 완료: {json_path}")
+        return config
+    except json.JSONDecodeError as e:
+        logger.exception(f"Azure 설정 파일 파싱 실패: {e}")
+        raise
