@@ -1,107 +1,162 @@
-import re
-from typing import Optional
+# wrapper.py 상단 import 보강
+from datetime import datetime
+import os
+import json
+import logging
 
-def extract_delivery_address_from_content(content: str) -> Optional[str]:
+logger = logging.getLogger("WRAPPER")  # 있으면 생략
+
+def write_fail_and_insert(in_params: dict,
+                          base: dict,
+                          code: str,
+                          message: str,
+                          attach_file: str | None = None,
+                          receipt_index: int | None = None):
     """
-    content 안에 '배달주소'라는 라벨이 있을 때만 그 뒤에서 주소 문자열을 추출.
-    - '배달주소' 뒤의 구분자(:, -, 공백) 허용
-    - 줄바꿈 또는 다른 라벨(전화/사업자/주문/결제 등)이 나오기 전까지만 캡처
-    - 과도한 전역 주소 탐지는 하지 않음(가게 주소 오탐 방지)
-    - 없으면 None 반환
+    모든 실패 지점에서 호출하는 공통 함수.
+    - fail JSON(summary+items[]) 생성
+    - insert_postprocessed_result로 DB 입력 시도
     """
-    if not content:
-        return None
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    fiid = base.get("FIID")
+    line_index = base.get("LINE_INDEX")
+    r_idx = receipt_index if receipt_index is not None else base.get("RECEIPT_INDEX")
 
-    text = content
+    summary = {
+        "FIID": fiid,
+        "LINE_INDEX": line_index,
+        "RECEIPT_INDEX": r_idx,
+        "COMMON_YN": base.get("COMMON_YN"),
+        "GUBUN": base.get("GUBUN"),
+        "ATTACH_FILE": attach_file,
+        "COUNTRY": None, "RECEIPT_TYPE": None, "MERCHANT_NAME": None, "MERCHANT_PHONE_NO": None,
+        "DELIVERY_ADDR": None, "TRANSACTION_DATE": None, "TRANSACTION_TIME": None,
+        "TOTAL_AMOUNT": None, "SUMTOTAL_AMOUNT": None, "TAX_AMOUNT": None, "BIZ_NO": None,
+        "RESULT_CODE": code,
+        "RESULT_MESSAGE": message,
+        "CREATE_DATE": now_str,
+        "UPDATE_DATE": now_str
+    }
 
-    # '배달주소' 라벨 뒤 최대 120자만 창(window)으로 보고, 줄바꿈/다른 라벨 직전까지 캡처
-    # 필요시 stop 토큰(전화/사업자/주문/결제/주소/가게 등)을 추가/수정 가능
-    pattern = re.compile(
-        r"(배달\s*주소)\s*[:：\-]?\s*(?P<addr>.{0,120})",
-        flags=re.IGNORECASE
-    )
+    os.makedirs(in_params["post_json_dir"], exist_ok=True)
+    fail_name = f"fail_{fiid}_{line_index}_{r_idx if r_idx is not None else 0}_post.json"
+    fail_path = os.path.join(in_params["post_json_dir"], fail_name)
+    with open(fail_path, "w", encoding="utf-8") as f:
+        json.dump({"summary": summary, "items": []}, f, ensure_ascii=False, indent=2)
 
-    stop_tokens = re.compile(
-        r"(?:\r?\n|전화|연락처|휴대폰|사업자|주문|결제|영수증|가게|상호|주소\s*:|배송\s*지|수령\s*지)"
-    )
+    try:
+        insert_postprocessed_result(fail_path, in_params)
+    except Exception as e:
+        logger.error(f"[FATAL][DB_ERR] fail JSON DB 입력 실패: {e} (path={fail_path})", exc_info=True)
 
-    for m in pattern.finditer(text):
-        window = m.group("addr")
-        # 줄바꿈/스톱 토큰 전까지 자르기
-        stop = stop_tokens.search(window)
-        if stop:
-            window = window[:stop.start()]
 
-        # 앞뒤 공백/구두점 정리
-        addr = window.strip(" \t,;:.-|•·\u200b").strip()
-        # 중복 공백 축소
-        addr = re.sub(r"\s{2,}", " ", addr)
+def process_single_record(record: dict, in_params: dict):
+    logger.info(f"[시작] process_single_record - FIID={record.get('FIID')}, LINE_INDEX={record.get('LINE_INDEX')}")
+    try:
+        # 1) 전처리 실행
+        cropped_list = run_pre_pre_process(in_params, record)
 
-        # 너무 짧으면 스킵(예: 빈 문자열/의미 없음)
-        if len(addr) >= 5:
-            return addr
+        # 전처리 단계 자체 실패(예: 다운로드/DRM/변환 등) → 아무 결과도 없을 때 기록
+        if not cropped_list:
+            write_fail_and_insert(
+                in_params=in_params,
+                base={"FIID": record.get("FIID"),
+                      "LINE_INDEX": record.get("LINE_INDEX"),
+                      "GUBUN": record.get("GUBUN"),
+                      "COMMON_YN": None},
+                code="PRE_ERR",
+                message="전처리 단계 실패 또는 결과 없음",
+                attach_file=record.get("ATTACH_FILE"),
+                receipt_index=None
+            )
+            return
 
-    return None
+        for cropped in cropped_list:
+            # 2) YOLO 오류(박스 없음/여러개 등)도 무조건 기록
+            if "RESULT_CODE" in cropped:
+                write_fail_and_insert(
+                    in_params=in_params,
+                    base={"FIID": cropped.get("FIID"),
+                          "LINE_INDEX": cropped.get("LINE_INDEX"),
+                          "GUBUN": cropped.get("GUBUN"),
+                          "COMMON_YN": cropped.get("COMMON_YN"),
+                          "RECEIPT_INDEX": cropped.get("RECEIPT_INDEX")},
+                    code=cropped.get("RESULT_CODE", "YOLO_ERR"),
+                    message=cropped.get("RESULT_MESSAGE", "YOLO 단계 오류"),
+                    attach_file=record.get("ATTACH_FILE"),
+                    receipt_index=cropped.get("RECEIPT_INDEX")
+                )
+                continue
 
-import re
-from typing import Optional
+            # 3) OCR
+            ocr_result = run_azure_ocr(in_params, cropped)
+            if ocr_result.get("RESULT_CODE") == "AZURE_ERR":
+                # ⬇️ 기존 로직 유지: fail JSON 만들고 DB 저장
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                error_summary = {
+                    "FIID": cropped.get("FIID"),
+                    "LINE_INDEX": cropped.get("LINE_INDEX"),
+                    "RECEIPT_INDEX": cropped.get("RECEIPT_INDEX"),
+                    "COMMON_YN": cropped.get("COMMON_YN"),
+                    "GUBUN": cropped.get("GUBUN"),
+                    "ATTACH_FILE": record.get("ATTACH_FILE"),
+                    "COUNTRY": None, "RECEIPT_TYPE": None, "MERCHANT_NAME": None, "MERCHANT_PHONE_NO": None,
+                    "DELIVERY_ADDR": None, "TRANSACTION_DATE": None, "TRANSACTION_TIME": None,
+                    "TOTAL_AMOUNT": None, "SUMTOTAL_AMOUNT": None, "TAX_AMOUNT": None, "BIZ_NO": None,
+                    "RESULT_CODE": ocr_result.get("RESULT_CODE"),
+                    "RESULT_MESSAGE": ocr_result.get("RESULT_MESSAGE"),
+                    "CREATE_DATE": now_str,
+                    "UPDATE_DATE": now_str
+                }
+                error_result_path = os.path.join(
+                    in_params["post_json_dir"],
+                    f"fail_{error_summary['FIID']}_{error_summary['LINE_INDEX']}_{error_summary['RECEIPT_INDEX']}_post.json"
+                )
+                with open(error_result_path, "w", encoding="utf-8") as f:
+                    json.dump({"summary": error_summary, "items": []}, f, ensure_ascii=False, indent=2)
+                insert_postprocessed_result(error_result_path, in_params)
+                continue
 
-def extract_business_no(content: str) -> Optional[str]:
-    """
-    영수증 전체 텍스트(content)에서 사업자번호를 추출해 정규화하여 반환.
-    - 우선 '사업자(등록)번호' 라벨 인접 영역에서 탐색
-    - 폴백으로 문서 전체에서 9~10자리 숫자 패턴(3-2-4/5) 탐색
-    - 전화번호(01x-xxx-xxxx / 01x-xxxx-xxxx) 등은 제외
-    - 반환: 10자리 -> 000-00-00000, 9자리 -> 000-00-0000, 없으면 None
-    """
-    if not content:
-        return None
+            # 4) 후처리
+            try:
+                json_path = os.path.join(
+                    in_params["ocr_json_dir"],
+                    f"{os.path.splitext(os.path.basename(cropped['file_path']))[0]}.ocr.json"
+                )
+                post_json_path = post_process_and_save(
+                    {**in_params, "postprocess_output_dir": in_params["post_json_dir"]},
+                    {**cropped, "json_path": json_path, "ATTACH_FILE": record.get("ATTACH_FILE")}
+                )
+            except Exception as e:
+                # 만약 post_process_and_save 내부에서 예외가 전파되면 여기서도 안전하게 실패 기록
+                write_fail_and_insert(
+                    in_params=in_params,
+                    base=cropped,
+                    code="POST_ERR",
+                    message=str(e),
+                    attach_file=record.get("ATTACH_FILE"),
+                    receipt_index=cropped.get("RECEIPT_INDEX")
+                )
+                continue
 
-    text = content
+            # 5) DB 저장 (후처리 성공/또는 후처리 내부에서 만든 fail JSON 경로)
+            try:
+                insert_postprocessed_result(post_json_path, in_params)
+            except Exception as e:
+                # DB 오류도 기록(이중 실패지만, 로그로 원인 남김)
+                logger.error(f"[ERROR] DB 저장 실패: {e} (path={post_json_path})", exc_info=True)
 
-    # 1) 라벨 근처 우선 탐색: '사업자번호', '사업자 등록번호', '사업자등록번호' 등
-    #    라벨 뒤 0~40자 내에서 숫자/하이픈/공백으로 이뤄진 덩어리 캡처
-    label_pattern = re.compile(
-        r'(사업자\s*등록?\s*번호)\s*[:：]?\s*([0-9\-\s]{7,20})',
-        flags=re.IGNORECASE
-    )
-    m = label_pattern.search(text)
-    candidates = []
-    if m:
-        candidates.append(m.group(2))
-
-    # 2) 폴백: 문서 전체에서 3-2-(4|5) 패턴 탐색(하이픈/공백은 옵션)
-    #    예: 000-00-00000 / 000 00 00000 / 0000000000
-    generic_pattern = re.compile(
-        r'\b(\d{3}[-\s]?\d{2}[-\s]?\d{4,5})\b'
-    )
-    for m in generic_pattern.finditer(text):
-        candidates.append(m.group(1))
-
-    # 3) 후보 정제: 전화번호/날짜 등 오탐 제거 후 숫자만 남겨 길이 체크
-    #    - 전화번호(01x 시작 10~11자리)는 제외
-    phone_like = re.compile(r'^01[016789]\d{7,8}$')  # 010xxxxxxxx, 011xxxxxxxx 등
-
-    def normalize_digits(s: str) -> Optional[str]:
-        digits = re.sub(r'\D+', '', s)
-        if not digits:
-            return None
-        # 전화번호 제외
-        if phone_like.match(digits):
-            return None
-        # 9 or 10자리만 허용
-        if len(digits) == 10:
-            return f"{digits[0:3]}-{digits[3:5]}-{digits[5:10]}"
-        elif len(digits) == 9:
-            return f"{digits[0:3]}-{digits[3:5]}-{digits[5:9]}"
-        else:
-            return None
-
-    # 4) 우선순위: 라벨근처 후보들 -> 폴백 후보들
-    for raw in candidates:
-        normalized = normalize_digits(raw)
-        if normalized:
-            return normalized
-
-    return None
-
+    except Exception as e:
+        # 래퍼 레벨의 예기치 못한 오류도 기록
+        write_fail_and_insert(
+            in_params=in_params,
+            base={"FIID": record.get("FIID"),
+                  "LINE_INDEX": record.get("LINE_INDEX"),
+                  "GUBUN": record.get("GUBUN"),
+                  "COMMON_YN": None},
+            code="WRAP_ERR",
+            message=str(e),
+            attach_file=record.get("ATTACH_FILE"),
+            receipt_index=None
+        )
+    logger.info(f"[종료] process_single_record - FIID={record.get('FIID')}, LINE_INDEX={record.get('LINE_INDEX')}")
