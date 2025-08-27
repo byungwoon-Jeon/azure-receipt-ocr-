@@ -1,9 +1,13 @@
-# pre_pre_process.py 상단 어딘가 (PIL import 근처)
-from PIL import Image, ImageFile
-ImageFile.LOAD_TRUNCATED_IMAGES = True   # 손상/잘린 이미지도 강제 로드
-Image.MAX_IMAGE_PIXELS = 100_000_000     # 초대형 이미지 허용(필요시 조정)
+# pre_pre_process.py 상단 근처에 추가/보강
+import io, time, os
+from PIL import Image, ImageFile, UnidentifiedImageError
+from PIL import Image as PILImage
+from PIL import ImageChops
 
-import time, os
+# 손상 파일도 강제 로드 허용, 초대형 이미지 허용치 상향(환경에 맞게 조정)
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+Image.MAX_IMAGE_PIXELS = 100_000_000
+
 def convert_to_png(input_path: str, save_dir: str) -> str:
     logger.info("[시작] convert_to_png")
     t0 = time.time()
@@ -14,17 +18,31 @@ def convert_to_png(input_path: str, save_dir: str) -> str:
         filename = os.path.splitext(os.path.basename(input_path))[0] + ".png"
         save_path = os.path.join(save_dir, filename)
 
-        # 디버깅용: 원본 파일 크기/확장자 로그
-        try:
-            size = os.path.getsize(input_path)
-            logger.debug(f"[convert_to_png] src={input_path}, size={size} bytes")
-        except Exception:
-            logger.debug(f"[convert_to_png] src={input_path}, size=unknown")
+        # 1) 원본 바이트를 한 번에 읽어 BytesIO로 넘김(네트워크/락 이슈 회피)
+        #    → OS 파일 핸들은 즉시 닫히므로 AV/락에 덜 걸림
+        with open(input_path, "rb") as f:
+            raw = f.read()
 
-        # 실제 로딩을 강제하여 지연 구간 식별
-        with Image.open(input_path) as img:
-            _ = img.size          # 메타 접근
-            img.load()            # 완전 로드(지연평가 방지)
+        # 2) 1차: verify()로 파일 무결성 검사 (디코더 빨리 터뜨리고 원인 로그 확보)
+        bio = io.BytesIO(raw)
+        try:
+            img_probe = Image.open(bio)
+            img_probe.verify()  # 디코더/헤더 검증만 수행
+        except UnidentifiedImageError as ue:
+            logger.error(f"[ERROR] Pillow가 포맷을 식별 못함: {ue}")
+            raise
+        except Exception as e:
+            logger.error(f"[ERROR] 이미지 검증 실패(손상/미지원 코덱 가능성): {e}")
+            raise
+        finally:
+            # verify() 호출 후엔 재사용하지 않음
+            del img_probe
+
+        # 3) 2차: 실제 로딩 (새 BytesIO로 재오픈) + 강제 load()로 지연평가 제거
+        bio2 = io.BytesIO(raw)
+        with Image.open(bio2) as img:
+            _ = img.size        # 메타 접근
+            img.load()          # 여기서 멈추면 디코더/코덱 문제 가능성 매우 높음
             out = img.convert("RGB")
             out.save(save_path, "PNG", optimize=True)
 
