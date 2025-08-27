@@ -1,31 +1,48 @@
+# pre_pre_process.py
+from PIL import Image, ImageFile, UnidentifiedImageError
+from PIL.Image import DecompressionBombError
+import time
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True  # 손상 이미지도 로드 시도
+
 def convert_to_png(input_path: str, save_dir: str) -> str:
     logger.info("[시작] convert_to_png")
 
-    # 👇 다운로드/경로 이상만 빠르게 점검
-    try:
-        import os, binascii
-        exists = os.path.exists(input_path)
-        is_file = os.path.isfile(input_path)
-        size = os.path.getsize(input_path) if is_file else -1
-        logger.info(f"[DL-CHECK] path={input_path} exists={exists} is_file={is_file} size={size}")
-
-        if not is_file or size <= 0:
-            raise FileNotFoundError(f"[DL-CHECK] 파일이 없거나 비어있음 (path={input_path}, size={size})")
-
-        # 파일이 ‘정상적으로 다운로드’ 되었는지 최소 확인(앞부분 몇 바이트만)
-        with open(input_path, "rb") as f:
-            head = f.read(64)
-        logger.info(f"[DL-CHECK] head(64B)={binascii.hexlify(head)[:32].decode()}... len={len(head)}")
-
-    except Exception as e:
-        logger.error(f"[DL-CHECK][FAIL] 다운로드/경로 문제 의심: {e}")
-        raise  # 여기서 바로 올려서 상위에서 fail JSON 로직 타게 해도 됨
-
-    # ↓↓↓ 여기부터는 기존 convert_to_png 본래 코드 유지 ↓↓↓
+    # (네가 이미 넣은) DL-CHECK 바로 위/아래에 위치시키면 됨
+    import os
     os.makedirs(save_dir, exist_ok=True)
     filename = os.path.splitext(os.path.basename(input_path))[0] + ".png"
     save_path = os.path.join(save_dir, filename)
-    with Image.open(input_path) as img:
-        img.convert("RGB").save(save_path, "PNG")
+
+    # Pillow 코덱 지원 상태도 한 번 찍어두기(참고용)
+    try:
+        from PIL import features
+        logger.info(f"[PIL] jpg={features.check('jpg')} png={features.check('png')} webp={features.check('webp')}")
+    except Exception:
+        pass
+
+    t0 = time.time()
+    try:
+        logger.info(f"[OPEN] Image.open 시도: {input_path}")
+        with Image.open(input_path) as img:
+            logger.info(f"[OPEN-OK] format={img.format}, mode={img.mode}, size={img.size}")
+            img.load()  # 디코더 강제 로드(지연평가 제거)
+            logger.info("[LOAD-OK] 디코딩 완료")
+            out = img.convert("RGB")
+            out.save(save_path, "PNG", optimize=True)
+            logger.info(f"[SAVE-OK] → {save_path} (elapsed={time.time()-t0:.2f}s)")
+    except UnidentifiedImageError as e:
+        logger.error(f"[OPEN-ERR] 포맷 인식 실패(UnidentifiedImageError): {e}", exc_info=True)
+        raise
+    except DecompressionBombError as e:
+        logger.error(f"[OPEN-ERR] 초대형 이미지 차단(DecompressionBombError): {e}", exc_info=True)
+        raise
+    except OSError as e:
+        logger.error(f"[OPEN-ERR] OSError: {e}", exc_info=True)
+        raise
+    except Exception as e:
+        logger.error(f"[OPEN-ERR] 기타 예외: {e}", exc_info=True)
+        raise
+
     logger.info("[종료] convert_to_png")
     return save_path
