@@ -1,238 +1,6 @@
-def crop_receipts_with_yolo(
-    model: YOLO,
-    png_path: str,
-    file_type: str,
-    base_filename: str,
-    original_img: Image.Image,
-    fiid: str,
-    line_index: int,
-    gubun: str,
-    receipt_index: int or None,
-    common_yn: int,
-    cropped_dir: str
-) -> list:
-    """
-    YOLO 결과에서 중복/포함 박스 제거 + 규칙 기반 필터링 적용
-    - ATTACH_FILE: 최종 1장만 남김(가장 신뢰도 높거나 병합 결과)
-    - FILE_PATH: 여러 장 가능하되, 중복·포함 제거 후 남긴다
-    """
-    logger.info("[시작] crop_receipts_with_yolo")
-    results = []
-    try:
-        # ① YOLO 추론 시 conf / iou를 적절히 올려 잡음 감소
-        #    (필요시 in_params로 외부 주입 가능: 예 conf=0.35~0.5, iou=0.5~0.7)
-        yolo_results = model(png_path, conf=0.4, iou=0.6)
-        boxes = yolo_results[0].boxes
-
-        if boxes is None or len(boxes) == 0:
-            logger.warning("YOLO 탐지 결과 없음")
-            results.append({
-                "FIID": fiid, "LINE_INDEX": line_index, "GUBUN": gubun,
-                "RECEIPT_INDEX": None, "COMMON_YN": common_yn,
-                "RESULT_CODE": "E001",
-                "RESULT_MESSAGE": "YOLO 탐지 결과 없음"
-            })
-            logger.info("[종료] crop_receipts_with_yolo")
-            return results
-
-        os.makedirs(cropped_dir, exist_ok=True)
-        W, H = original_img.size
-
-        # ② xyxy + conf 추출
-        dets = []
-        for b in boxes:
-            xyxy = b.xyxy[0].cpu().numpy()
-            x1, y1, x2, y2 = map(float, xyxy)
-            conf = float(b.conf[0].cpu().numpy()) if getattr(b, "conf", None) is not None else 1.0
-            # 화면 밖 좌표 클램프
-            x1 = max(0, min(x1, W-1)); x2 = max(1, min(x2, W))
-            y1 = max(0, min(y1, H-1)); y2 = max(1, min(y2, H))
-            if x2 <= x1 or y2 <= y1:
-                continue
-            dets.append((x1, y1, x2, y2, conf))
-
-        if not dets:
-            logger.warning("YOLO 탐지 후 유효 박스 없음")
-            results.append({
-                "FIID": fiid, "LINE_INDEX": line_index, "GUBUN": gubun,
-                "RECEIPT_INDEX": None, "COMMON_YN": common_yn,
-                "RESULT_CODE": "E001",
-                "RESULT_MESSAGE": "YOLO 유효 박스 없음"
-            })
-            logger.info("[종료] crop_receipts_with_yolo")
-            return results
-
-        # ③ 중복/포함 제거 + 비정상 박스 필터
-        #    - ATTACH_FILE: 최종 1개만(topk=1)
-        #    - FILE_PATH  : 여러 개 허용(topk=None)
-        topk = 1 if file_type == "ATTACH_FILE" else None
-        clean = _nms_and_merge(
-            dets,
-            iou_merge_thresh=0.7,      # IoU 높으면 중복으로 판단
-            contain_thresh=0.9,        # 큰 박스가 작은 박스를 거의 포함하면 제거
-            min_area_ratio=0.03,       # 이미지 대비 3% 미만 박스 제거(튜닝 포인트)
-            aspect_min=0.7, aspect_max=8.0,
-            img_w=W, img_h=H,
-            topk=topk
-        )
-
-        if not clean:
-            logger.warning("후처리 후 박스 없음")
-            results.append({
-                "FIID": fiid, "LINE_INDEX": line_index, "GUBUN": gubun,
-                "RECEIPT_INDEX": None, "COMMON_YN": common_yn,
-                "RESULT_CODE": "E003",
-                "RESULT_MESSAGE": "후처리 후 박스 없음"
-            })
-            logger.info("[종료] crop_receipts_with_yolo")
-            return results
-
-        # ④ 크롭 저장
-        if file_type == "ATTACH_FILE":
-            # 하나만 저장(항상 r1로)
-            x1, y1, x2, y2, _ = clean[0]
-            cropped_img = original_img.crop((int(x1), int(y1), int(x2), int(y2)))
-            cropped_path = os.path.join(cropped_dir, f"{base_filename}_receipt.png")
-            cropped_img.save(cropped_path)
-            validate_file_size(cropped_path)
-            results.append({
-                "FIID": fiid, "LINE_INDEX": line_index, "GUBUN": gubun,
-                "RECEIPT_INDEX": receipt_index or 1,
-                "COMMON_YN": common_yn,
-                "file_path": cropped_path
-            })
-        else:  # FILE_PATH
-            for idx, b in enumerate(clean, 1):
-                x1, y1, x2, y2, _ = b
-                cropped_img = original_img.crop((int(x1), int(y1), int(x2), int(y2)))
-                cropped_path = os.path.join(cropped_dir, f"{base_filename}_r{idx}.png")
-                cropped_img.save(cropped_path)
-                validate_file_size(cropped_path)
-                results.append({
-                    "FIID": fiid, "LINE_INDEX": line_index, "GUBUN": gubun,
-                    "RECEIPT_INDEX": idx,
-                    "COMMON_YN": common_yn,
-                    "file_path": cropped_path
-                })
-
-    except Exception as e:
-        logger.error(f"[ERROR] YOLO 크롭 오류: {e}")
-        traceback.print_exc()
-    logger.info("[종료] crop_receipts_with_yolo")
-    return results
-
-
-def extract_images_from_document(file_path: str) -> list:
-    """
-    PDF, DOCX, PPTX, XLSX 문서로부터 이미지 추출 → PIL.Image 리스트 반환
-    - PDF: 고해상도 렌더링(Matrix 배율) 적용
-    """
-    logger.info("[시작] extract_images_from_document")
-    ext = os.path.splitext(file_path)[1].lower()
-    images = []
-
-    # 고해상도 기본값 (필요시 2.0~4.0 사이로 조정)
-    PDF_SCALE = 3.0
-    PDF_ALPHA = False
-    TARGET_DPI = (300, 300)
-
-    try:
-        if ext == ".pdf":
-            doc = fitz.open(file_path)
-            try:
-                for page in doc:
-                    pix = page.get_pixmap(
-                        matrix=fitz.Matrix(PDF_SCALE, PDF_SCALE),
-                        alpha=PDF_ALPHA
-                    )
-                    img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-                    # 이미지 객체에 DPI 힌트 부여 (저장은 아래 merge에서 처리)
-                    img.info["dpi"] = TARGET_DPI
-                    images.append(img)
-            finally:
-                doc.close()
-
-        elif ext in [".docx", ".pptx", ".xlsx"]:
-            media_path = {
-                ".docx": "word/media/",
-                ".pptx": "ppt/media/",
-                ".xlsx": "xl/media/"
-            }[ext]
-
-            with zipfile.ZipFile(file_path, 'r') as zf:
-                entries = sorted(
-                    [f for f in zf.namelist()
-                     if f.lower().startswith(media_path) and f.lower().endswith((".png", ".jpg", ".jpeg"))]
-                )
-                for name in entries:
-                    try:
-                        with zf.open(name) as f:
-                            img = Image.open(f)
-                            if img.mode != "RGB":
-                                img = img.convert("RGB")
-                            img.info["dpi"] = TARGET_DPI
-                            images.append(img)
-                    except Exception as e:
-                        logger.warning(f"[WARN] 이미지 추출 실패: {name} - {e}")
-                        continue
-        else:
-            logger.warning(f"[WARN] 지원하지 않는 문서 확장자: {ext}")
-
-    except Exception as e:
-        logger.error(f"[ERROR] 문서 이미지 추출 오류: {e}")
-        traceback.print_exc()
-
-    logger.info(f"[종료] extract_images_from_document → {len(images)}개 이미지 추출됨")
-    return images
-
-
-def merge_images_vertically(images: list, output_path: str) -> str:
-    """
-    이미지 리스트를 세로로 병합하여 output_path에 저장
-    - PNG 저장 시 DPI 메타데이터(기본 300dpi) 포함
-    """
-    logger.info("[시작] merge_images_vertically")
-
-    if not images:
-        raise ValueError("이미지 리스트가 비어 있습니다")
-
-    widths = [img.width for img in images]
-    heights = [img.height for img in images]
-    max_width = max(widths)
-    total_height = sum(heights)
-
-    merged_img = Image.new('RGB', (max_width, total_height), (255, 255, 255))
-    y_offset = 0
-    for img in images:
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-        merged_img.paste(img, (0, y_offset))
-        y_offset += img.height
-
-    # 개별 이미지에 설정했던 DPI가 있으면 우선 사용, 없으면 300dpi 기본
-    dpi = None
-    for img in images:
-        if "dpi" in getattr(img, "info", {}):
-            dpi = img.info["dpi"]
-            break
-    if dpi is None:
-        dpi = (300, 300)
-
-    merged_img.save(output_path, "PNG", dpi=dpi)
-    logger.info(f"[종료] 병합 이미지 저장 완료: {output_path}")
-    return output_path
-
-# --- 중복/포함 박스 제거용 유틸 ---
 def _nms_and_merge(boxes_xyxy_conf, iou_merge_thresh=0.7, contain_thresh=0.9,
                    min_area_ratio=0.03, aspect_min=0.7, aspect_max=8.0,
-                   img_w=None, img_h=None, topk=None):
-    """
-    boxes_xyxy_conf: [(x1,y1,x2,y2,conf), ...]
-    - 큰 박스 안에 거의 포함되는 작은 박스 제거
-    - IoU 높은 박스 병합(선택적)
-    - 너무 작은 박스/비정상 종횡비 박스 필터
-    - topk 지정 시 상위 K개만 잔존(ATTACH_FILE용)
-    """
+                   img_w=None, img_h=None, topk=None, verbose=True, logger_=logger):
     import math
 
     def area(b):
@@ -248,47 +16,52 @@ def _nms_and_merge(boxes_xyxy_conf, iou_merge_thresh=0.7, contain_thresh=0.9,
 
     def contains(a, b):
         # a가 b를 거의 포함?
-        aw = max(1, a[2]-a[0]); ah = max(1, a[3]-a[1])
         ix1 = max(a[0], b[0]); iy1 = max(a[1], b[1])
         ix2 = min(a[2], b[2]); iy2 = min(a[3], b[3])
         iw = max(0, ix2 - ix1); ih = max(0, iy2 - iy1)
         inter = iw * ih
         return inter / (area(b) + 1e-9) >= contain_thresh
 
-    # 0) 신뢰도 내림차순
     boxes = sorted(boxes_xyxy_conf, key=lambda x: x[4], reverse=True)
+    if verbose:
+        logger_.debug(f"[NMS] 시작: {len(boxes)}개, img=({img_w}x{img_h}), "
+                      f"min_area_ratio={min_area_ratio}, aspect=[{aspect_min},{aspect_max}], "
+                      f"contain>={contain_thresh}, iou_merge>={iou_merge_thresh}")
 
-    # 1) 너무 작은/이상한 비율 박스 제거
+    # 1) 너무 작은/비정상 비율 제거
     kept = []
     img_area = (img_w * img_h) if (img_w and img_h) else None
+    removed_small = 0; removed_aspect = 0
     for b in boxes:
         w = b[2]-b[0]; h = b[3]-b[1]
         if w <= 5 or h <= 5:
-            continue
+            removed_small += 1; continue
         if img_area and area(b) / img_area < min_area_ratio:
-            continue
+            removed_small += 1; continue
         ar = (h / (w + 1e-9))
         if not (aspect_min <= ar <= aspect_max):
-            continue
+            removed_aspect += 1; continue
         kept.append(b)
-    boxes = kept
+    if verbose:
+        logger_.debug(f"[NMS] 1단계 후: {len(kept)}개 (작음/면적/비율 제거 {removed_small+removed_aspect}개)")
 
     # 2) 포함/중복 제거
     final = []
-    for b in boxes:
+    removed_contain_iou = 0
+    for b in kept:
         drop = False
         for f in final:
             if contains(f, b) or iou(f, b) >= iou_merge_thresh:
-                drop = True; break
+                removed_contain_iou += 1; drop = True; break
         if not drop:
             final.append(b)
+    if verbose:
+        logger_.debug(f"[NMS] 2단계 후: {len(final)}개 (포함/IoU 제거 {removed_contain_iou}개)")
 
-    # 3) 필요 시 상위 K개만
+    # 3) top-k
     if topk is not None and len(final) > topk:
         final = sorted(final, key=lambda x: x[4], reverse=True)[:topk]
+        if verbose:
+            logger_.debug(f"[NMS] topk={topk} 적용 후: {len(final)}개")
 
     return final
-
-
-
-
