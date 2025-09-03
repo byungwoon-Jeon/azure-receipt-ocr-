@@ -1,67 +1,24 @@
-def _nms_and_merge(boxes_xyxy_conf, iou_merge_thresh=0.7, contain_thresh=0.9,
-                   min_area_ratio=0.03, aspect_min=0.7, aspect_max=8.0,
-                   img_w=None, img_h=None, topk=None, verbose=True, logger_=logger):
-    import math
+# 1) 너무 작은/비정상 비율 제거
+kept = []
+img_area = (img_w * img_h) if (img_w and img_h) else None
+removed_small = 0; removed_aspect = 0
+for b in boxes:
+    w = b[2]-b[0]; h = b[3]-b[1]
+    if w <= 5 or h <= 5:
+        removed_small += 1; continue
+    if img_area and ((w*h) / img_area) < min_area_ratio:
+        removed_small += 1; continue
+    ar = h / (w + 1e-9)
+    if not (aspect_min <= ar <= aspect_max):
+        removed_aspect += 1; continue
+    kept.append(b)
 
-    def area(b):
-        return max(0, b[2]-b[0]) * max(0, b[3]-b[1])
-
-    def iou(a, b):
-        ix1 = max(a[0], b[0]); iy1 = max(a[1], b[1])
-        ix2 = min(a[2], b[2]); iy2 = min(a[3], b[3])
-        iw = max(0, ix2 - ix1); ih = max(0, iy2 - iy1)
-        inter = iw * ih
-        if inter == 0: return 0.0
-        return inter / (area(a) + area(b) - inter + 1e-9)
-
-    def contains(a, b):
-        # a가 b를 거의 포함?
-        ix1 = max(a[0], b[0]); iy1 = max(a[1], b[1])
-        ix2 = min(a[2], b[2]); iy2 = min(a[3], b[3])
-        iw = max(0, ix2 - ix1); ih = max(0, iy2 - iy1)
-        inter = iw * ih
-        return inter / (area(b) + 1e-9) >= contain_thresh
-
-    boxes = sorted(boxes_xyxy_conf, key=lambda x: x[4], reverse=True)
-    if verbose:
-        logger_.debug(f"[NMS] 시작: {len(boxes)}개, img=({img_w}x{img_h}), "
-                      f"min_area_ratio={min_area_ratio}, aspect=[{aspect_min},{aspect_max}], "
-                      f"contain>={contain_thresh}, iou_merge>={iou_merge_thresh}")
-
-    # 1) 너무 작은/비정상 비율 제거
+# 🔧 모두 사라지면 완화 파라미터로 즉시 재통과
+if not kept:
     kept = []
-    img_area = (img_w * img_h) if (img_w and img_h) else None
-    removed_small = 0; removed_aspect = 0
     for b in boxes:
         w = b[2]-b[0]; h = b[3]-b[1]
-        if w <= 5 or h <= 5:
-            removed_small += 1; continue
-        if img_area and area(b) / img_area < min_area_ratio:
-            removed_small += 1; continue
-        ar = (h / (w + 1e-9))
-        if not (aspect_min <= ar <= aspect_max):
-            removed_aspect += 1; continue
+        # 최소 픽셀 기준만 적용하고 면적/종횡비는 잠시 스킵
+        if w <= 3 or h <= 3:
+            continue
         kept.append(b)
-    if verbose:
-        logger_.debug(f"[NMS] 1단계 후: {len(kept)}개 (작음/면적/비율 제거 {removed_small+removed_aspect}개)")
-
-    # 2) 포함/중복 제거
-    final = []
-    removed_contain_iou = 0
-    for b in kept:
-        drop = False
-        for f in final:
-            if contains(f, b) or iou(f, b) >= iou_merge_thresh:
-                removed_contain_iou += 1; drop = True; break
-        if not drop:
-            final.append(b)
-    if verbose:
-        logger_.debug(f"[NMS] 2단계 후: {len(final)}개 (포함/IoU 제거 {removed_contain_iou}개)")
-
-    # 3) top-k
-    if topk is not None and len(final) > topk:
-        final = sorted(final, key=lambda x: x[4], reverse=True)[:topk]
-        if verbose:
-            logger_.debug(f"[NMS] topk={topk} 적용 후: {len(final)}개")
-
-    return final
