@@ -1,24 +1,68 @@
-# 1) 너무 작은/비정상 비율 제거
-kept = []
-img_area = (img_w * img_h) if (img_w and img_h) else None
-removed_small = 0; removed_aspect = 0
-for b in boxes:
-    w = b[2]-b[0]; h = b[3]-b[1]
-    if w <= 5 or h <= 5:
-        removed_small += 1; continue
-    if img_area and ((w*h) / img_area) < min_area_ratio:
-        removed_small += 1; continue
-    ar = h / (w + 1e-9)
-    if not (aspect_min <= ar <= aspect_max):
-        removed_aspect += 1; continue
-    kept.append(b)
+import re
+from datetime import datetime
+import logging
 
-# 🔧 모두 사라지면 완화 파라미터로 즉시 재통과
-if not kept:
-    kept = []
-    for b in boxes:
-        w = b[2]-b[0]; h = b[3]-b[1]
-        # 최소 픽셀 기준만 적용하고 면적/종횡비는 잠시 스킵
-        if w <= 3 or h <= 3:
+logger = logging.getLogger("POST_PROCESS")
+
+# ── 날짜 패턴 (필요 최소한만 유지)
+_DATE_PATTERNS = [
+    r"\b\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}\b",      # YYYY-MM-DD / YYYY/MM/DD
+    r"\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b",      # 1 July 2025 / 01 Jul 2025
+    r"\b[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}\b",    # July 1, 2025 / Jul 01 2025
+    r"\b\d{1,2}[-/\.]\d{1,2}[-/\.]\d{4}\b",      # DD/MM/YYYY / MM/DD/YYYY (모호)
+]
+
+# 문자열을 ISO 날짜(YYYY-MM-DD)로 변환 시도
+def _to_iso_date(raw: str) -> str or None:
+    raw = raw.replace(",", "").strip()
+    # 해석 우선순위: YYYY-… → 문자형(DMY/MDY) → DD/MM/YYYY → MM/DD/YYYY
+    fmts = [
+        "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
+        "%d %B %Y", "%d %b %Y", "%B %d %Y", "%b %d %Y",
+        "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",     # KR/EU 우선
+        "%m/%d/%Y", "%m-%d-%Y", "%m.%d.%Y",     # US
+    ]
+    for fmt in fmts:
+        try:
+            return datetime.strptime(raw, fmt).date().isoformat()
+        except Exception:
             continue
-        kept.append(b)
+    return None
+
+def extract_date_from_content(content: str) -> str or None:
+    """content에서 날짜 문자열을 찾아 ISO(YYYY-MM-DD) 반환. 없으면 None"""
+    if not content:
+        return None
+    for p in _DATE_PATTERNS:
+        m = re.search(p, content)
+        if not m:
+            continue
+        iso = _to_iso_date(m.group(0))
+        if iso:
+            logger.info("[DATE] content에서 날짜 추출 성공: %s (raw=%s)", iso, m.group(0))
+            return iso
+        logger.warning("[DATE] 날짜 파싱 실패(raw=%s), 다음 패턴 시도", m.group(0))
+    return None
+
+with open(json_path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+doc = data.get("analyzeResult", {}).get("documents", [{}])[0]
+fields = doc.get("fields", {}) if isinstance(doc, dict) else {}
+
+# ✅ 날짜 결정: content 우선 → 없으면 Azure valueDate
+content_text = data.get("analyzeResult", {}).get("content", "")  # Azure 응답 최상단 content
+date_from_content = extract_date_from_content(content_text)
+azure_value_date = None
+try:
+    azure_value_date = fields.get("TransactionDate", {}).get("valueDate")
+except Exception:
+    pass
+
+transaction_date_iso = date_from_content or azure_value_date
+if date_from_content:
+    logger.info("[DATE] content 기반 날짜 사용: %s", transaction_date_iso)
+elif azure_value_date:
+    logger.info("[DATE] content 미탐지 → Azure valueDate 사용: %s", transaction_date_iso)
+else:
+    logger.warning("[DATE] content/azure 모두 날짜 없음 → None 처리")
