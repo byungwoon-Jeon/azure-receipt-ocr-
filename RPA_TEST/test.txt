@@ -1,68 +1,35 @@
-import re
-from datetime import datetime
-import logging
+# 상단 import (없으면 추가)
+import io
+import zipfile
+from PIL import Image
 
-logger = logging.getLogger("POST_PROCESS")
+# ...중략...
 
-# ── 날짜 패턴 (필요 최소한만 유지)
-_DATE_PATTERNS = [
-    r"\b\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}\b",      # YYYY-MM-DD / YYYY/MM/DD
-    r"\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b",      # 1 July 2025 / 01 Jul 2025
-    r"\b[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}\b",    # July 1, 2025 / Jul 01 2025
-    r"\b\d{1,2}[-/\.]\d{1,2}[-/\.]\d{4}\b",      # DD/MM/YYYY / MM/DD/YYYY (모호)
-]
+elif ext in [".docx", ".pptx", ".xlsx"]:
+    media_path = {
+        ".docx": "word/media/",
+        ".pptx": "ppt/media/",
+        ".xlsx": "xl/media/"
+    }[ext]
 
-# 문자열을 ISO 날짜(YYYY-MM-DD)로 변환 시도
-def _to_iso_date(raw: str) -> str or None:
-    raw = raw.replace(",", "").strip()
-    # 해석 우선순위: YYYY-… → 문자형(DMY/MDY) → DD/MM/YYYY → MM/DD/YYYY
-    fmts = [
-        "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
-        "%d %B %Y", "%d %b %Y", "%B %d %Y", "%b %d %Y",
-        "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",     # KR/EU 우선
-        "%m/%d/%Y", "%m-%d-%Y", "%m.%d.%Y",     # US
-    ]
-    for fmt in fmts:
-        try:
-            return datetime.strptime(raw, fmt).date().isoformat()
-        except Exception:
-            continue
-    return None
-
-def extract_date_from_content(content: str) -> str or None:
-    """content에서 날짜 문자열을 찾아 ISO(YYYY-MM-DD) 반환. 없으면 None"""
-    if not content:
-        return None
-    for p in _DATE_PATTERNS:
-        m = re.search(p, content)
-        if not m:
-            continue
-        iso = _to_iso_date(m.group(0))
-        if iso:
-            logger.info("[DATE] content에서 날짜 추출 성공: %s (raw=%s)", iso, m.group(0))
-            return iso
-        logger.warning("[DATE] 날짜 파싱 실패(raw=%s), 다음 패턴 시도", m.group(0))
-    return None
-
-with open(json_path, "r", encoding="utf-8") as f:
-    data = json.load(f)
-
-doc = data.get("analyzeResult", {}).get("documents", [{}])[0]
-fields = doc.get("fields", {}) if isinstance(doc, dict) else {}
-
-# ✅ 날짜 결정: content 우선 → 없으면 Azure valueDate
-content_text = data.get("analyzeResult", {}).get("content", "")  # Azure 응답 최상단 content
-date_from_content = extract_date_from_content(content_text)
-azure_value_date = None
-try:
-    azure_value_date = fields.get("TransactionDate", {}).get("valueDate")
-except Exception:
-    pass
-
-transaction_date_iso = date_from_content or azure_value_date
-if date_from_content:
-    logger.info("[DATE] content 기반 날짜 사용: %s", transaction_date_iso)
-elif azure_value_date:
-    logger.info("[DATE] content 미탐지 → Azure valueDate 사용: %s", transaction_date_iso)
-else:
-    logger.warning("[DATE] content/azure 모두 날짜 없음 → None 처리")
+    with zipfile.ZipFile(file_path, 'r') as zf:
+        entries = sorted(
+            [f for f in zf.namelist()
+             if f.lower().startswith(media_path)
+             and f.lower().endswith((".png", ".jpg", ".jpeg"))]
+        )
+        for name in entries:
+            try:
+                # ❗파일 핸들 대신 바이트로 읽어서 메모리로 고정
+                data = zf.read(name)
+                img = Image.open(io.BytesIO(data))
+                # ❗지연로딩 방지: 지금 메모리로 완전히 디코딩
+                img.load()          # 또는 img = img.copy()
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                # (원하면 dpi 힌트도 부여)
+                # img.info["dpi"] = (200, 200)
+                images.append(img)
+            except Exception as e:
+                logger.warning(f"[WARN] 이미지 추출 실패: {name} - {e}")
+                continue
