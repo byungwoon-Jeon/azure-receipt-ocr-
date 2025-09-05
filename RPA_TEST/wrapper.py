@@ -4,11 +4,43 @@ import logging
 import tomllib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy import create_engine
+import sys
+from pathlib import Path
+script_path = Path(__file__).resolve()
+
+from rpa.ai.idp.util import idp_setup_env, idp_utils
+from logru import logger
+import tomlkit
+
+working_path: dict = idp_setup_env.initialize_working_paths(script_path.parent)
 
 from db_master import query_data_by_date, insert_postprocessed_result
 from pre_pre_process import run_pre_pre_process    # Integrated pre-processing + YOLO
 from doc_process import run_azure_ocr
 from post_process import post_process_and_save
+
+def write_fail_and_insert(duser_input: dict,
+    						base: dict,
+                            code: str,
+                            message: str,
+                            attach_file:Optional[str]=None,
+                            receipt_index:Optional[str]=None):
+	now_str=datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+    fiid = base.get("FIID")
+    line_index = base.get("LINE_INDEX")
+    r_idx = receipt_index if receipt_index is not None else base.get("RECEIPT_INDEX")
+    
+    summary = {
+    	"FIID":fiid,
+        "LINE_INDEX":line_index,
+        "COMMON_YN":base.get("COMMON_YN"),
+        "GUBUN" : base.get("GUBUN")
+        "ATTACH_FILE":attach_file,
+        "COUNTRY":None, "RECEIPT_None"
+    }
+
+
+
 
 def process_single_record(record: dict, in_params: dict):
     """
