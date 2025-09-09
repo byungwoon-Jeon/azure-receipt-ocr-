@@ -76,13 +76,10 @@ def write_fail_and_insert(duser_input: dict,
     	inset_postprocessed_reuslt(fail_path,duser_input)
     except Exception as e:
         logger.error("error")    
-    
-    
 
-
-
-
-def process_single_record(record: dict, in_params: dict):
+#
+#
+def excute_worker(record: dict, duser_input: dict):
     """
     하나의 DB 레코드에 대해 전체 OCR 파이프라인 단계를 실행합니다.
     전처리(다운로드 및 YOLO 크롭), Azure OCR 인식, 후처리 및 DB 저장까지 순차적으로 수행하며, 각 단계의 결과에 따라 오류 시 다음 단계를 건너뜁니다.
@@ -96,12 +93,44 @@ def process_single_record(record: dict, in_params: dict):
     """
     logger.info(f"[시작] process_single_record - FIID={record.get('FIID')}, LINE_INDEX={record.get('LINE_INDEX')}")
     try:
-        # 전처리 단계 실행 (다운로드 + 크롭)
+     #  #전처리 단계 실행 (다운로드 + 크롭)
         cropped_list = run_pre_pre_process(in_params, record)
+
+		# 전처리 단계 실패
+        if not cropped_list:
+            for key, r_idx, c_yn in [("ATTACH_FILE", 1, "N"), ("FILE_PATH",1,"Y")]:
+                url = record.get(key)
+                if not url:
+                    continue
+                write_fail_and_insert(
+                	duser_input=duser_input,
+                    base={"FIID":record.get("FIID"),
+                    "LINE_INDEX":record.get("LINE_INDEX"),
+                    "GUBUN":record.get("GUBUN"),
+                    "COMMON_YN":c_yn,
+                    "RECEIPT_INDEX":r_idx},
+                    code="500",
+                    message="전처리 단계 실패",
+                    attach_file=url,
+                    receipt_index=r_idx
+                    )
+			return
 
         for cropped in cropped_list:
             if "RESULT_CODE" in cropped:
                 logger.warning(f"[SKIP] YOLO 오류 발생: {cropped}")
+                write_fail_and_insert(
+                	duser_input=duser_input,
+                    base={"FIID":cropped.get("FIID"),
+                    "LINE_INDEX":cropped.get("LINE_INDEX"),
+                    "GUBUN":cropped.get("GUBUN"),
+                    "COMMON_YN":cropped.get("COMMON_YN"),
+                    "RECEIPT_INDEX":cropped.get("RECEIPT_INDEX")},
+                    code=cropped.get("RESULT_CODE", 500),
+                    message=cropped.get("RESULT_MESSAGE", "YOLO 단계 오류"),
+                    attach_file=cropped.get("source_url"),
+                    receipt_index=cropped.get("RECEIPT_INDEX")
+                )
                 continue
 
             # OCR 실행 ✅ 수정 코드:
@@ -138,18 +167,18 @@ def process_single_record(record: dict, in_params: dict):
 
             # 후처리 JSON 경로 구성
             json_path = os.path.join(
-                in_params["ocr_json_dir"],
+                duser_input["idp_azure_dir"],
                 f"{os.path.splitext(os.path.basename(cropped['file_path']))[0]}.ocr.json"
             )
 
             # 후처리 실행
             post_json_path = post_process_and_save(
-                {**in_params, "postprocess_output_dir": in_params["post_json_dir"]},
-                {**cropped, "json_path": json_path, "ATTACH_FILE": record.get("ATTACH_FILE")}
+                {**duser_input, "idp_postprocess_dir": duser_input["idp_postprocess_dir"]},
+                {**cropped, "json_path": json_path, "ATTACH_FILE": cropped.get("source_url")}
             )
 
             # DB 저장
-            insert_postprocessed_result(post_json_path, in_params)
+            insert_postprocessed_result(post_json_path, duser_input)
 
     except Exception as e:
         logger.error(f"[FATAL] 처리 중 오류 발생 - FIID={record.get('FIID')}: {e}", exc_info=True)
