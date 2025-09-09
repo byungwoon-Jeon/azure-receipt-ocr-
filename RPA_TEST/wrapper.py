@@ -184,7 +184,59 @@ def excute_worker(record: dict, duser_input: dict):
         logger.error(f"[FATAL] 처리 중 오류 발생 - FIID={record.get('FIID')}: {e}", exc_info=True)
     logger.info(f"[종료] process_single_record - FIID={record.get('FIID')}, LINE_INDEX={record.get('LINE_INDEX')}")
 
-def run_wrapper(in_params: dict):
+#
+#
+def _adapter_excute_worker(params:dict):
+    record = params["record"]
+    duser_input = params["duser_input"]
+    retrun excute_worker(record, duser_input)
+
+#
+#
+def das_process_setup(duser_input:dict) -> dict:
+    try:
+    logger.debug(f"DAS 프로세스 환경설정 시작")
+    
+    idp_filedrop_dir = duser_input["idp_filedrop_dir"]    
+	idp_output_files_dir = duser_input["idp_output_files_dir"]
+    idp_log_file_path = duser_input["idp_log_file_path"]
+	
+    sub_folder_name = datetime.now().strtime("%Y%m%d")
+    
+    idp_workspace_dir = os.path.join(idp_filedrop_dir, sub_folder_name)
+    idp_preprocess_dir = os.path.join(idp_workspace_dir, "PreProcess")
+	idp_docprocess_dir = os.path.join(idp_workspace_dir, "DocProcess")
+    idp_postprocess_dir = os.path.join(idp_workspace_dir, "PostProcess")
+    
+    idp_rawfile_dir = os.path.join(idp_workspace_dir, "RawFile")
+    idp_mergerdoc_dir = os.path.join(idp_prerpocess_dir, "MergeDoc")
+    idp_cropped_dir = os.path.join(idp_preprocess_dir, "Cropped")
+    idp_azure_dir = os.path.join(idp_docprocess_dir, "Azure")
+    idp_error_dir = os.path.join(idp_docprocess_dir, "Error")
+    
+    if not os.path.exists(idp_workspace_dir):
+        os.mkdir(idp_workspace_dir)
+    if not os.path.exists(idp_preprocess_dir):
+        os.mkdir(idp_preprocess_dir)
+    if not os.path.exists(idp_docprocess_dir):
+        os.mkdir(idp_docprocess_dir)
+    if not os.path.exists(idp_postprocess_dir):
+        os.mkdir(idp_postprocess_dir)
+        
+   if not os.path.exists(idp_rawfile_dir):
+        os.mkdir(idp_rawfile_dir)
+   if not os.path.exists(idp_mergedoc_dir):
+        os.mkdir(idp_mergedoc_dir)
+   if not os.path.exists(idp_cropped_dir):
+        os.mkdir(idp_cropped_dir)
+   if not os.path.exists(idp_azure_dir):
+        os.mkdir(idp_azure_dir)
+   if not os.path.exists(idp_error_dir):
+        os.mkdir(idp_error_dir)        
+
+#
+#
+def execute(duser_input: dict):
     """
     지정한 날짜에 해당하는 모든 DB 레코드를 조회하여 OCR 파이프라인을 실행합니다.
     각 레코드를 별도의 스레드로 처리하며, 처리할 레코드가 없으면 함수를 종료합니다.
@@ -196,64 +248,35 @@ def run_wrapper(in_params: dict):
     - None: 처리 완료 후 함수는 아무 값도 반환하지 않습니다. (과정 중 로그로 진행 상황을 기록합니다)
     """
     logger.info("[시작] run_wrapper")
-    data_records = query_data_by_date(in_params)
+    
+    duser_input = {**duser_input,**working_paths}
+    duser_input = das_process_setup(duser_input)
+    
+    data_records = query_data_by_date(duser_input)
     if not data_records:
         logger.info("📭 처리할 데이터가 없습니다.")
         return
 
     logger.info(f"총 {len(data_records)}건 처리 시작")
-    max_workers = in_params.get("max_workers", 4)
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(process_single_record, rec, in_params) for rec in data_records]
-        for future in as_completed(futures):
-            future.result()
+    
+    func_params_list = [
+    	{"record":rec, "duser_input":duser_input}
+        for rec in data_records
+    ]
+    
+    idp_utils.run_in_multi_thread(
+    	target_func=adapter_excute_worker,
+        func_params_list=func_params_list,
+    )
+    
     logger.info("✅ 전체 파이프라인 완료")
     logger.info("[종료] run_wrapper")
 
 if __name__ == "__main__":
-    # Load database configuration from TOML file
-    with open("Module_config_dex.toml", "rb") as f:
-        config = tomllib.load(f)
-    db_conf = config.get("database", config.get("hana", {}))  # support [database] or [hana] section
-    hana_user = db_conf["user"]; hana_pass = db_conf["password"]
-    hana_host = db_conf["host"]; hana_port = db_conf["port"]
-    hana_conn_str = f"hdbcli://{hana_user}:{hana_pass}@{hana_host}:{hana_port}"
-    engine = create_engine(hana_conn_str)
-
-    # Set up unified logging (file + console)
-    log_dir = "./logs"
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "pipeline.log")
-    logging.basicConfig(
-        level=logging.INFO, 
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_file, mode="a", encoding="utf-8"),
-            logging.StreamHandler()
-        ]
-    )
-    logger = logging.getLogger("WRAPPER")
-    logger.setLevel(logging.INFO)  # Use INFO level or as specified
-
-    # Prepare parameters for pipeline
-    in_params = {
-        "sqlalchemy_conn": engine.connect(),
-        # target_date not provided will default to yesterday in query_data_by_date if needed
-        "target_date": "2025-07-09",  # Example date; could be omitted or set as needed
-        "azure_endpoint": "https://<your-endpoint>.cognitiveservices.azure.com/",
-        "azure_key": "<your-azure-key>",
-        "output_dir": "./output",
-        "preprocessed_dir": "./preprocessed",
-        "cropped_dir": "./cropped",
-        "ocr_json_dir": "./ocr_json",
-        "post_json_dir": "./post_json",
-        "error_json_dir": "./error_json",
-        "yolo_model_path": "./yolo/best.pt",
-        "max_workers": 4
+	duser_input = {
+    	"SystemName" : "DAS01",
+        "ccrParams":{
+        	"targetDate" : "2025-09-03"
+        }
     }
-
-    # Run the pipeline
-    run_wrapper(in_params)
-
-    # Clean up database connection
-    in_params["sqlalchemy_conn"].close()
+	excute(duser_input)
