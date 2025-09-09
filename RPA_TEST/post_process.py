@@ -7,13 +7,13 @@ from datetime import datetime
 
 logger = logging.getLogger("POST_PROCESS")
 
-def post_process_and_save(in_params: dict, record: dict) -> str:
+def post_process_and_save(duser_input: dict, record: dict) -> str:
     """
     Azure OCR 결과 JSON 데이터를 후처리하여 요약(summary) 정보와 항목(item) 리스트를 추출하고, 이들을 하나의 JSON 파일로 저장합니다.
     인식된 필드 값을 정리하고, 필요한 경우 추가 필드를 추출하여 summary와 item 리스트를 생성합니다.
 
     입력:
-    - in_params (dict): 후처리 동작에 필요한 설정값 (postprocess_output_dir 등)과 경로 정보.
+    - duser_input (dict): 후처리 동작에 필요한 설정값 (postprocess_output_dir 등)과 경로 정보.
     - record (dict): 후처리 대상 정보를 담은 딕셔너리. OCR 결과 JSON 경로(json_path)와 식별자 정보(FIID, LINE_INDEX, RECEIPT_INDEX, COMMON_YN 등)를 포함해야 합니다.
 
     출력:
@@ -26,12 +26,12 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
 
     try:
         # 필수 입력값 검사
-        assert "postprocess_output_dir" in in_params, "[ERROR] 'postprocess_output_dir' 미지정"
+        assert "postprocess_output_dir" in duser_input, "[ERROR] 'postprocess_output_dir' 미지정"
         for key in ["json_path", "FIID", "LINE_INDEX", "RECEIPT_INDEX", "COMMON_YN"]:
             assert key in record, f"[ERROR] '{key}' 필드 없음"
 
         json_path = record["json_path"]
-        output_dir = in_params["postprocess_output_dir"]
+        output_dir = duser_input["postprocess_output_dir"]
         os.makedirs(output_dir, exist_ok=True)
 
         if not os.path.exists(json_path):
@@ -115,7 +115,7 @@ def post_process_and_save(in_params: dict, record: dict) -> str:
         logger.error(f"[ERROR] 후처리 실패: {e}")
         traceback.print_exc()
 
-        error_path = os.path.join(in_params.get("error_json_dir", "./error_json"), f"fail_{record['FIID']}_{record['LINE_INDEX']}.json")
+        error_path = os.path.join(duser_input.get("error_json_dir", "./error_json"), f"fail_{record['FIID']}_{record['LINE_INDEX']}.json")
         os.makedirs(os.path.dirname(error_path), exist_ok=True)
         #✅ 수정 코드:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     from pprint import pprint
 
     # ✅ 테스트 파라미터
-    in_params = {
+    duser_input = {
         "postprocess_output_dir": "./test_postprocess_json",  # 후처리 결과 저장 위치
         "error_json_dir": "./test_error_json"                 # 실패 시 에러 JSON 저장 위치
     }
@@ -162,7 +162,7 @@ if __name__ == "__main__":
 
     try:
         print("🧪 post_process_and_save() 테스트 시작")
-        output_path = post_process_and_save(in_params, record)
+        output_path = post_process_and_save(duser_input, record)
 
         print(f"\n📁 생성된 파일 경로: {output_path}")
         with open(output_path, "r", encoding="utf-8") as f:

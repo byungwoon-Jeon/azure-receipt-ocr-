@@ -7,14 +7,14 @@ from azure.ai.formrecognizer import DocumentAnalysisClient
 
 logger = logging.getLogger("AZURE_OCR")
 
-def run_azure_ocr(in_params: dict, record: dict) -> dict:
+def run_azure_ocr(duser_input: dict, record: dict) -> dict:
     """
     Azure Form Recognizer OCR 서비스를 호출하여 주어진 이미지 파일(record['file_path'])에 대한 문서 인식 결과를 반환합니다.
     OCR 성공 시 결과를 JSON 파일로 저장하고 결과 딕셔너리를 반환합니다.
     OCR 실패 시 오류 내용을 로그에 기록하고, 오류 정보를 담은 JSON 파일을 생성한 뒤, RESULT_CODE와 에러 메시지를 포함한 딕셔너리를 반환합니다 (이 때 FIID, LINE_INDEX 등 원본 식별자 포함).
 
     입력:
-    - in_params (dict): Azure OCR 실행에 필요한 설정 (azure_endpoint, azure_key, ocr_json_dir 등 필수).
+    - duser_input (dict): Azure OCR 실행에 필요한 설정 (azure_endpoint, azure_key, ocr_json_dir 등 필수).
     - record (dict): OCR 대상 정보를 담은 딕셔너리로, 'file_path' 키에 이미지 경로를 포함하며, 식별자 정보(FIID, LINE_INDEX 등)를 포함.
 
     출력:
@@ -24,14 +24,14 @@ def run_azure_ocr(in_params: dict, record: dict) -> dict:
 
     try:
         # 필수 설정 확인
-        assert "azure_endpoint" in in_params, "'azure_endpoint'가 in_params에 없습니다."
-        assert "azure_key" in in_params, "'azure_key'가 in_params에 없습니다."
-        assert "ocr_json_dir" in in_params, "'ocr_json_dir'가 in_params에 없습니다."
+        assert "azure_endpoint" in duser_input, "'azure_endpoint'가 duser_input에 없습니다."
+        assert "azure_key" in duser_input, "'azure_key'가 duser_input에 없습니다."
+        assert "ocr_json_dir" in duser_input, "'ocr_json_dir'가 duser_input에 없습니다."
         assert "file_path" in record, "'file_path'가 record에 없습니다."
 
-        endpoint = in_params["azure_endpoint"]
-        key = in_params["azure_key"]
-        json_dir = in_params["ocr_json_dir"]
+        endpoint = duser_input["azure_endpoint"]
+        key = duser_input["azure_key"]
+        json_dir = duser_input["ocr_json_dir"]
         os.makedirs(json_dir, exist_ok=True)
 
         file_path = record["file_path"]
@@ -59,7 +59,7 @@ def run_azure_ocr(in_params: dict, record: dict) -> dict:
         traceback.print_exc()
 
         # 실패 결과 JSON 저장
-        error_json_dir = in_params.get("error_json_dir", "./error_json")
+        error_json_dir = duser_input.get("error_json_dir", "./error_json")
         os.makedirs(error_json_dir, exist_ok=True)
         fail_filename = f"fail_{record.get('FIID')}_{record.get('LINE_INDEX')}_{record.get('RECEIPT_INDEX')}_{record.get('COMMON_YN')}.json"
         fail_path = os.path.join(error_json_dir, fail_filename)
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     from pprint import pprint
 
     # ✅ 테스트 입력 파라미터 설정
-    in_params = {
+    duser_input = {
         "azure_endpoint": "https://<your-resource>.cognitiveservices.azure.com/",  # ← 실제 엔드포인트로 수정
         "azure_key": "<your-azure-key>",                                           # ← 실제 키로 수정
         "ocr_json_dir": "./test_ocr_json",                                         # OCR 결과 저장 경로
@@ -107,7 +107,7 @@ if __name__ == "__main__":
     }
 
     print("🧪 run_azure_ocr() 테스트 시작")
-    result = run_azure_ocr(in_params, record)
+    result = run_azure_ocr(duser_input, record)
 
     print("\n📄 결과:")
     pprint(result)

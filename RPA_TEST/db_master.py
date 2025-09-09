@@ -5,22 +5,22 @@ import traceback
 from sqlalchemy import text
 from decimal import Decimal
 
-def query_data_by_date(in_params: dict) -> list:
+def query_data_by_date(duser_input: dict) -> list:
     """
     지정한 날짜의 SAP HANA 테이블 레코드를 조회하여 반환합니다.
     LDCOM_CARDFILE_LOG 테이블에서 해당 날짜(LOAD_DATE 기준)의 레코드들을 조회하며, 필요한 필드들 (FIID, GUBUN, LINE_INDEX, ATTACH_FILE, FILE_PATH)만 가져옵니다.
 
     입력:
-    - in_params (dict): 조회에 필요한 파라미터. sqlalchemy_conn (데이터베이스 연결 객체)와 optional로 target_date (조회할 기준 날짜, 미지정 시 어제 날짜로 기본 설정)를 포함.
+    - duser_input (dict): 조회에 필요한 파라미터. sqlalchemy_conn (데이터베이스 연결 객체)와 optional로 target_date (조회할 기준 날짜, 미지정 시 어제 날짜로 기본 설정)를 포함.
 
     출력:
     - list: 조회된 레코드 딕셔너리들의 리스트. 각 딕셔너리는 FIID, GUBUN, LINE_INDEX, ATTACH_FILE, FILE_PATH 키를 포함하며, LINE_INDEX는 정수형으로 반환됩니다.
     """
     logger.info("[시작] query_data_by_date")
     try:
-        conn = in_params["sqlalchemy_conn"]
+        conn = duser_input["sqlalchemy_conn"]
         import datetime
-        target_date = in_params.get("target_date")
+        target_date = duser_input.get("target_date")
         if not target_date:
             target_date = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -57,14 +57,14 @@ def query_data_by_date(in_params: dict) -> list:
         traceback.print_exc()
         return []
 
-def insert_postprocessed_result(json_path: str, in_params: dict) -> None:
+def insert_postprocessed_result(json_path: str, duser_input: dict) -> None:
     """
     후처리 완료된 JSON 파일을 읽어 SAP HANA DB의 요약 및 품목 테이블에 삽입합니다.
     요약 정보는 RPA_CCR_LINE_SUMM 테이블에, 항목 리스트는 RPA_CCR_LINE_ITEMS 테이블에 INSERT합니다.
 
     입력:
     - json_path (str): 후처리 결과 JSON 파일 경로. 이 파일에는 summary와 items 키가 포함된 JSON 구조여야 합니다.
-    - in_params (dict): 데이터베이스 연결 정보 등을 포함한 파라미터 딕셔너리. (sqlalchemy_conn 필수)
+    - duser_input (dict): 데이터베이스 연결 정보 등을 포함한 파라미터 딕셔너리. (sqlalchemy_conn 필수)
 
     출력:
     - None: DB 삽입 완료 후 반환값이 없습니다. (실패 시 예외를 발생시키며, 로그에 에러를 기록합니다)
@@ -82,7 +82,7 @@ def insert_postprocessed_result(json_path: str, in_params: dict) -> None:
 
         summary = data["summary"]
         items = data["items"]
-        conn = in_params["sqlalchemy_conn"]
+        conn = duser_input["sqlalchemy_conn"]
 
         # ✅ SAP HANA용 INSERT 문 (TO_DATE 사용하지 않음)
         insert_summ_sql = text("""
@@ -147,14 +147,14 @@ if __name__ == "__main__":
     engine = create_engine(conn_str)
     conn = engine.connect()
 
-    in_params = {
+    duser_input = {
         "sqlalchemy_conn": conn,
         "target_date": "2025-07-10",  # 테스트 날짜
     }
 
     # ✅ 1. 조회 테스트
     print("🔍 query_data_by_date() 테스트")
-    data = query_data_by_date(in_params)
+    data = query_data_by_date(duser_input)
     print(f"조회된 건수: {len(data)}")
     if data:
         print("예시 레코드:", data[0])
@@ -163,7 +163,7 @@ if __name__ == "__main__":
     print("\n📝 insert_postprocessed_result() 테스트")
     try:
         test_json_path = "./test_post_json/post_TEST001_1_1.json"  # 실제 파일 경로로 교체
-        insert_postprocessed_result(test_json_path, in_params)
+        insert_postprocessed_result(test_json_path, duser_input)
         print("✅ INSERT 테스트 성공")
     except Exception as e:
         print("❌ INSERT 테스트 실패:", e)
