@@ -1,24 +1,44 @@
-import os
-import json
-import logging
-import tomllib
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from sqlalchemy import create_engine
+###Initializing runtime enviroment###
 import sys
 from pathlib import Path
+
 script_path = Path(__file__).resolve()
+
+for parent in script_path.parents:
+    if parent.name in ("src", "DEX", "PEX"):
+        app_path = str(parent)
+        break
+
+if not app_path:
+    raise FileNotFoundError(f"ERR")
+
+if app_path not in sys.path:
+    sys.path.append(app_path)
 
 from rpa.ai.idp.util import idp_setup_env, idp_utils
 from logru import logger
-import tomlkit
 
 working_path: dict = idp_setup_env.initialize_working_paths(script_path.parent)
+
+idp_utils.setup_logger(log_level="DEBUG",log_path=working_path["idp_log_file_path"])
+
+import logging
+
+###User Define Function###
+import os
+import re
+import json
+import tomlkit
+from datetime import datetime 
 
 from db_master import query_data_by_date, insert_postprocessed_result
 from pre_pre_process import run_pre_pre_process    # Integrated pre-processing + YOLO
 from doc_process import run_azure_ocr
 from post_process import post_process_and_save
+from typing import Optional
 
+#
+#
 def write_fail_and_insert(duser_input: dict,
     						base: dict,
                             code: str,
@@ -36,8 +56,28 @@ def write_fail_and_insert(duser_input: dict,
         "COMMON_YN":base.get("COMMON_YN"),
         "GUBUN" : base.get("GUBUN")
         "ATTACH_FILE":attach_file,
-        "COUNTRY":None, "RECEIPT_None"
+        "COUNTRY":None, "RECEIPT_TYPE" : None, "MERCHANT_NAME":None,"MERCHANT_PHONE_NO":None,
+        "DELIVERY_ADDR":None, "TRANSACTION_DATE":None, "TRANSACTION_TIME":None,
+        "TOTAL_AMOUNT":None, "SUMTOTAL_AMOUNT":None, "TAX_AMOUNT":None, "BIZ_NO":None,
+        RESULT_CODE:code,
+        RESULT_MESSAGE:message,
+        CREATE_DATE:now_str,
+        UPDATE_DATE:now_str,
+        "CONTENTS":None
     }
+    
+    os.makedirs(duser_input["idp_error_dir"], exit_ok=True)
+    fail_name = f"fail_{fiid}_{line_index}_{r_idx if r_idx is not None else 0}_post.json"
+    fail_path = os.path.join(duser_input["idp_error_dir"],fail_name)
+    with open(fail_path, "w", encoding="utf-8") as f :
+    	json.dump({"summary":summary, "items":[]}, f, ensure_asci=False, indent=2)
+        
+    try:
+    	inset_postprocessed_reuslt(fail_path,duser_input)
+    except Exception as e:
+        logger.error("error")    
+    
+    
 
 
 
