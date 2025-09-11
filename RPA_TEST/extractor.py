@@ -39,49 +39,86 @@ from typing import Optional
 
 #
 #
-def generate_idp_items(duser_input: dict, data_records: list[dict]) -> list[dict]:
+def _adapter_run_pre_process(params: Dict[str, Any]) -> Dict[str, Any]:
     """
-    data_records 전체를 순회하면서
-    - run_pre_process로 크롭 실행 (dict 리스트 반환)
-    - 각 cropped(dict)를 OCR 대상 아이템(idp_item)으로 변환
-    - 전부 모아서 idp_items(list of dict)로 반환
+    각 data_record를 받아 run_pre_process를 실행하는 '단일 태스크'.
+    입력: {"duser_input": dict, "data_record": dict}
+    출력: {"cropped_list": list[dict], "error": str|None}
     """
-    idp_items: list[dict] = []
-    item_seq = 1  # 전체 아이템 고유 번호
+    duser_input = params["duser_input"]
+    data_record = params["data_record"]
+    try:
+        cropped_list = run_pre_process(duser_input, data_record)  # 반드시 list[dict]
+        if not isinstance(cropped_list, list):
+            raise TypeError("run_pre_process must return list[dict]")
+        return {"cropped_list": cropped_list or [], "error": None}
+    except Exception as e:
+        logger.exception(
+            f"[PRE] run_pre_process 실패: FIID={data_record.get('FIID')}, LINE_INDEX={data_record.get('LINE_INDEX')}, err={e}"
+        )
+        return {"cropped_list": [], "error": str(e)}
 
-    for idx, data_record in enumerate(data_records, start=1):
-        try:
-            cropped_list = run_pre_process(duser_input, data_record)
-            if not cropped_list:
-                continue  # 전처리 실패 or 결과 없음 → 건너뜀
 
-            for cropped in cropped_list:
-                idp_item = {
-                    "Index": idx,  # 원본 record 순번
-                    "item_seq": item_seq,  # 전체에서 몇 번째 OCR 대상인지
-                    "FIID": cropped.get("FIID"),
-                    "LINE_INDEX": cropped.get("LINE_INDEX"),
-                    "RECEIPT_INDEX": cropped.get("RECEIPT_INDEX"),
-                    "COMMON_YN": cropped.get("COMMON_YN"),
-                    "GUBUN": cropped.get("GUBUN"),
-                    "ATTACH_FILE": cropped.get("source_url"),
-                    "file_path": cropped.get("file_path"),
-                    "has_error": False,
-                    "error_message": None,
-                }
-                idp_items.append(idp_item)
-                item_seq += 1
+def generate_idp_items(duser_input: Dict[str, Any],
+                       data_records: List[Dict[str, Any]],
+                       include_failed: bool = False) -> List[Dict[str, Any]]:
+    """
+    data_records의 '반복 자체'를 스레드로 병렬 실행하여 run_pre_process를 동시에 호출하고,
+    각 결과(cropped_list: list[dict])를 평탄화하여 OCR 대상 아이템(idp_items)을 만든다.
 
-        except Exception as e:
-            # 방어코드: 한 record 실패해도 전체 멈추지 않음
-            import logging
-            logging.getLogger("PRE_PROCESSING").exception(
-                f"[WARN] generate_idp_items 예외 발생: index={idx}, FIID={data_record.get('FIID')}, err={e}"
-            )
+    - ATTACH_FILE 제외
+    - RESULT_CODE / RESULT_MESSAGE 추가
+    - include_failed=False 이면 RESULT_CODE != "200" 항목은 제외
+    - 순서 보장 없음(필요하면 pre_results 정렬 한 줄 추가 가능)
+    """
+    idp_items: List[Dict[str, Any]] = []
+    if not data_records:
+        logger.info("generate_idp_items: data_records 비어 있음")
+        return idp_items
+
+    # 1) '레코드 단위 반복 자체'를 병렬화: 각 record → 하나의 태스크
+    thread_params = [{"duser_input": duser_input, "data_record": rec} for rec in data_records]
+    pre_results = idp_utils.run_in_multi_thread(_adapter_run_pre_process, thread_params)
+
+    # (선택) 순서 보장 원하면 아래 주석 해제
+    # pre_results.sort(key=lambda r: (r.get("error") is not None))
+
+    # 2) 평탄화(flatten) → idp_items
+    item_seq = 1
+    for res in pre_results:
+        if res["error"]:
+            # 전처리 자체 실패: 스킵 (실패를 아이템에 포함하려면 여기서 생성도 가능)
             continue
 
-    return idp_items
+        cropped_list: List[Dict[str, Any]] = res["cropped_list"]
+        if not cropped_list:
+            continue
 
+        for cropped in cropped_list:
+            # 전처리 단계가 RESULT_CODE/RESULT_MESSAGE를 넣어줬다고 가정
+            result_code = str(cropped.get("RESULT_CODE", "200"))
+            result_msg = cropped.get("RESULT_MESSAGE")
+
+            if (result_code != "200") and not include_failed:
+                continue
+
+            idp_items.append({
+                "item_seq": item_seq,                        # 생성 시점의 전역 순번
+                "FIID": cropped.get("FIID"),
+                "LINE_INDEX": cropped.get("LINE_INDEX"),
+                "RECEIPT_INDEX": cropped.get("RECEIPT_INDEX"),
+                "COMMON_YN": cropped.get("COMMON_YN"),
+                "GUBUN": cropped.get("GUBUN"),
+                "file_path": cropped.get("file_path"),       # 전처리 산출물(크롭 이미지) 경로
+                "RESULT_CODE": result_code,                  # 요청 반영
+                "RESULT_MESSAGE": result_msg,                # 요청 반영
+                "has_error": (result_code != "200"),
+                "error_message": result_msg if result_code != "200" else None,
+            })
+            item_seq += 1
+
+    logger.info(f"generate_idp_items: 총 {len(idp_items)}개 아이템 생성 (records={len(data_records)})")
+    return idp_items
 
 #
 #
