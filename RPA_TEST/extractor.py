@@ -39,6 +39,52 @@ from typing import Optional
 
 #
 #
+def generate_idp_items(duser_input: dict, data_records: list[dict]) -> list[dict]:
+    """
+    data_records 전체를 순회하면서
+    - run_pre_process로 크롭 실행 (dict 리스트 반환)
+    - 각 cropped(dict)를 OCR 대상 아이템(idp_item)으로 변환
+    - 전부 모아서 idp_items(list of dict)로 반환
+    """
+    idp_items: list[dict] = []
+    item_seq = 1  # 전체 아이템 고유 번호
+
+    for idx, data_record in enumerate(data_records, start=1):
+        try:
+            cropped_list = run_pre_process(duser_input, data_record)
+            if not cropped_list:
+                continue  # 전처리 실패 or 결과 없음 → 건너뜀
+
+            for cropped in cropped_list:
+                idp_item = {
+                    "Index": idx,  # 원본 record 순번
+                    "item_seq": item_seq,  # 전체에서 몇 번째 OCR 대상인지
+                    "FIID": cropped.get("FIID"),
+                    "LINE_INDEX": cropped.get("LINE_INDEX"),
+                    "RECEIPT_INDEX": cropped.get("RECEIPT_INDEX"),
+                    "COMMON_YN": cropped.get("COMMON_YN"),
+                    "GUBUN": cropped.get("GUBUN"),
+                    "ATTACH_FILE": cropped.get("source_url"),
+                    "file_path": cropped.get("file_path"),
+                    "has_error": False,
+                    "error_message": None,
+                }
+                idp_items.append(idp_item)
+                item_seq += 1
+
+        except Exception as e:
+            # 방어코드: 한 record 실패해도 전체 멈추지 않음
+            import logging
+            logging.getLogger("PRE_PROCESSING").exception(
+                f"[WARN] generate_idp_items 예외 발생: index={idx}, FIID={data_record.get('FIID')}, err={e}"
+            )
+            continue
+
+    return idp_items
+
+
+#
+#
 def write_fail_and_insert(duser_input: dict,
     						base: dict,
                             code: str,
