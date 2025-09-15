@@ -195,4 +195,93 @@ def execute_worker(idp_item: dict, duser_input: dict) -> dict:
 
     return idp_item
     
+# 실패 요약 파일 생성 + DB 입력 (idp_item 기반 단일 인자)
+from typing import Dict, Any, Optional
+import os, json, logging
+from datetime import datetime
+
+logger = logging.getLogger("EXTRACTOR")
+
+def write_fail_and_insert(duser_input: Dict[str, Any], idp_item: Dict[str, Any]) -> None:
+    """
+    idp_item에 이미 모든 정보(FIID, LINE_INDEX, RECEIPT_INDEX, COMMON_YN, GUBUN,
+    RESULT_CODE, RESULT_MESSAGE, ATTACH_FILE/source_url/file_path)가 있다고 가정.
+    - 실패 요약 JSON 생성 (./Error 또는 duser_input['idp_error_dir'])
+    - insert_postprocessed_result(...)로 DB 입력 (있으면)
+    예외 발생 시 로깅 후 안전히 반환.
+    """
+    try:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 식별자/메타
+        fiid: Optional[str] = idp_item.get("FIID")
+        line_index: Optional[int] = idp_item.get("LINE_INDEX")
+        r_idx: int = int(idp_item.get("RECEIPT_INDEX", 0))
+        common_yn: Optional[str] = idp_item.get("COMMON_YN")
+        gubun: Optional[str] = idp_item.get("GUBUN")
+
+        # 실패 코드/메시지 (기본값 안전화)
+        result_code: str = str(idp_item.get("RESULT_CODE", "500"))
+        result_msg: str = idp_item.get("RESULT_MESSAGE") or idp_item.get("error_message") or "Processing Failed"
+
+        # 첨부/경로 정보 우선순위
+        attach_file = (
+            idp_item.get("ATTACH_FILE")
+            or idp_item.get("source_url")
+            or idp_item.get("file_path")
+        )
+
+        # 에러 디렉터리
+        err_dir = duser_input.get("idp_error_dir") \
+                  or os.path.join(duser_input.get("idp_workspace_dir", "."), "Error")
+        os.makedirs(err_dir, exist_ok=True)
+
+        # 실패 요약 내용
+        summary = {
+            "FIID": fiid,
+            "LINE_INDEX": line_index,
+            "COMMON_YN": common_yn,
+            "GUBUN": gubun,
+            "ATTACH_FILE": attach_file,
+            "COUNTRY": None,
+            "RECEIPT_TYPE": None,
+            "MERCHANT_NAME": None,
+            "MERCHANT_PHONE_NO": None,
+            "DELIVERY_ADDR": None,
+            "TRANSACTION_DATE": None,
+            "TRANSACTION_TIME": None,
+            "TOTAL_AMOUNT": None,
+            "SUMTOTAL_AMOUNT": None,
+            "TAX_AMOUNT": None,
+            "BIZ_NO": None,
+            "RESULT_CODE": result_code,
+            "RESULT_MESSAGE": result_msg,
+            "CREATE_DATE": now_str,
+            "UPDATE_DATE": now_str,
+            "CONTENTS": None,
+        }
+
+        # 파일 저장
+        fail_name = f"fail_{fiid}_{line_index}_{r_idx}_post.json"
+        fail_path = os.path.join(err_dir, fail_name)
+
+        with open(fail_path, "w", encoding="utf-8") as f:
+            json.dump({"summary": summary, "items": []}, f, ensure_ascii=False, indent=2)
+
+        # DB 입력 시도 (모듈이 로드되어 있다면)
+        try:
+            # 전역/상위 스코프에 이미 import 되어 있다고 가정:
+            # from db_master import insert_postprocessed_result
+            if 'insert_postprocessed_result' in globals() and callable(globals()['insert_postprocessed_result']):
+                globals()['insert_postprocessed_result'](fail_path, duser_input)
+            else:
+                logger.warning("[WARN] insert_postprocessed_result 미로드 - DB 입력 생략")
+        except Exception:
+            logger.exception("[WARN] 실패 요약 DB 입력 실패")
+
+        logger.info(f"[FAIL-SAVED] {fail_path}")
+
+    except Exception:
+        logger.exception("[WARN] 실패 요약 파일 생성 실패")
+    
     
