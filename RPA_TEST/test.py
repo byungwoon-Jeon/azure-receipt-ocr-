@@ -284,4 +284,70 @@ def write_fail_and_insert(duser_input: Dict[str, Any], idp_item: Dict[str, Any])
     except Exception:
         logger.exception("[WARN] 실패 요약 파일 생성 실패")
     
-    
+# pre_pre_process.py (또는 전처리 모듈 파일)
+from typing import Dict, Any, List, Optional
+import os
+import logging
+
+logger = logging.getLogger("PRE_PROCESS")
+
+def _make_fail_crop(data_record: Dict[str, Any], msg: str) -> Dict[str, Any]:
+    """전처리 실패 시에도 항상 크롭 아이템 1개를 반환하기 위한 헬퍼"""
+    return {
+        "FIID": data_record.get("FIID"),
+        "LINE_INDEX": data_record.get("LINE_INDEX"),
+        "RECEIPT_INDEX": data_record.get("RECEIPT_INDEX", 0),
+        "COMMON_YN": data_record.get("COMMON_YN"),
+        "GUBUN": data_record.get("GUBUN"),
+        "file_path": None,                  # 전처리 산출물 없음
+        "source_url": data_record.get("ATTACH_FILE") or data_record.get("FILE_PATH"),
+        "RESULT_CODE": "500",
+        "RESULT_MESSAGE": f"Preprocess failed: {msg}",
+    }
+
+def run_pre_process(duser_input: Dict[str, Any], data_record: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    전처리 성공 시: list[dict] (각 dict는 정상 크롭, RESULT_CODE 기본 '200')
+    전처리 실패/예외/빈 결과 시: 실패 크롭 1건을 담은 list[dict] 반환
+    """
+    try:
+        # --- 기존 전처리 로직 (다운로드/병합/크롭 등) ---
+        # 아래 두 줄은 "예시" 자리. 네 원래 구현을 호출/삽입해.
+        # cropped_list = <원래_전처리_구현>(duser_input, data_record)
+        # cropped_list: List[Dict[str, Any]]  # 전제
+
+        cropped_list = []  # <-- 여기는 네 기존 구현으로 대체
+
+        # 빈 결과도 실패로 간주하여 1건 반환
+        if not cropped_list:
+            logger.warning(
+                f"[PRE] no cropped output: FIID={data_record.get('FIID')}, "
+                f"LINE_INDEX={data_record.get('LINE_INDEX')}"
+            )
+            return [_make_fail_crop(data_record, "no cropped output")]
+
+        # 정상 결과 정규화: 필수 키 채우고 RESULT_CODE 기본 '200'
+        normalized: List[Dict[str, Any]] = []
+        for c in cropped_list:
+            result_code = str(c.get("RESULT_CODE", "200"))
+            result_msg = c.get("RESULT_MESSAGE")
+            normalized.append({
+                "FIID": c.get("FIID", data_record.get("FIID")),
+                "LINE_INDEX": c.get("LINE_INDEX", data_record.get("LINE_INDEX")),
+                "RECEIPT_INDEX": c.get("RECEIPT_INDEX", data_record.get("RECEIPT_INDEX", 1)),
+                "COMMON_YN": c.get("COMMON_YN", data_record.get("COMMON_YN")),
+                "GUBUN": c.get("GUBUN", data_record.get("GUBUN")),
+                "file_path": c.get("file_path"),
+                "source_url": c.get("source_url", data_record.get("ATTACH_FILE") or data_record.get("FILE_PATH")),
+                "RESULT_CODE": result_code,
+                "RESULT_MESSAGE": result_msg,
+            })
+        return normalized
+
+    except Exception as e:
+        logger.exception(
+            f"[PRE] exception: FIID={data_record.get('FIID')}, "
+            f"LINE_INDEX={data_record.get('LINE_INDEX')}, err={e}"
+        )
+        # 예외도 실패 크롭 1건으로 반환
+        return [_make_fail_crop(data_record, str(e))]
