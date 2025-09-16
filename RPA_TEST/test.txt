@@ -1,35 +1,44 @@
-# 상단 import (없으면 추가)
-import io
-import zipfile
-from PIL import Image
+import os
+import logging
+from PyPDF2 import PdfReader, PdfWriter
 
-# ...중략...
+# 로깅 설정
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-elif ext in [".docx", ".pptx", ".xlsx"]:
-    media_path = {
-        ".docx": "word/media/",
-        ".pptx": "ppt/media/",
-        ".xlsx": "xl/media/"
-    }[ext]
+def split_pdf_by_pages(input_pdf: str, output_dir: str) -> None:
+    """
+    PDF 파일을 페이지 단위로 분할하여 각각 저장합니다.
 
-    with zipfile.ZipFile(file_path, 'r') as zf:
-        entries = sorted(
-            [f for f in zf.namelist()
-             if f.lower().startswith(media_path)
-             and f.lower().endswith((".png", ".jpg", ".jpeg"))]
-        )
-        for name in entries:
-            try:
-                # ❗파일 핸들 대신 바이트로 읽어서 메모리로 고정
-                data = zf.read(name)
-                img = Image.open(io.BytesIO(data))
-                # ❗지연로딩 방지: 지금 메모리로 완전히 디코딩
-                img.load()          # 또는 img = img.copy()
-                if img.mode != "RGB":
-                    img = img.convert("RGB")
-                # (원하면 dpi 힌트도 부여)
-                # img.info["dpi"] = (200, 200)
-                images.append(img)
-            except Exception as e:
-                logger.warning(f"[WARN] 이미지 추출 실패: {name} - {e}")
-                continue
+    Args:
+        input_pdf (str): 분할할 대상 PDF 파일 경로
+        output_dir (str): 분할된 PDF를 저장할 폴더 경로
+    """
+    try:
+        if not os.path.exists(input_pdf):
+            raise FileNotFoundError(f"PDF 파일이 존재하지 않습니다: {input_pdf}")
+        
+        os.makedirs(output_dir, exist_ok=True)
+        reader = PdfReader(input_pdf)
+
+        logging.info(f"총 {len(reader.pages)} 페이지 발견")
+
+        for page_num, page in enumerate(reader.pages, start=1):
+            writer = PdfWriter()
+            writer.add_page(page)
+
+            output_file = os.path.join(output_dir, f"page_{page_num}.pdf")
+            with open(output_file, "wb") as f:
+                writer.write(f)
+
+            logging.info(f"{page_num} 페이지 저장 완료 -> {output_file}")
+
+        logging.info("PDF 분할 완료")
+
+    except Exception as e:
+        logging.error(f"PDF 분할 중 오류 발생: {e}", exc_info=True)
+
+
+if __name__ == "__main__":
+    input_pdf_path = "example.pdf"      # 분할할 PDF 경로
+    output_directory = "output_pages"   # 결과 저장 폴더
+    split_pdf_by_pages(input_pdf_path, output_directory)
