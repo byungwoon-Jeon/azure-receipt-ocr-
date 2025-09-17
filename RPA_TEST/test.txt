@@ -1,85 +1,68 @@
-import os
-import logging
-from PyPDF2 import PdfReader, PdfWriter
-
-# 로깅 설정
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
-def split_pdf_by_pages(input_pdf: str, output_dir: str) -> None:
+def query_data_by_year(duser_input: dict) -> list:
     """
-    PDF 파일을 페이지 단위로 분할하여 각각 저장합니다.
-
-    Args:
-        input_pdf (str): 분할할 대상 PDF 파일 경로
-        output_dir (str): 분할된 PDF를 저장할 폴더 경로
+    APPR_COMPLTD_STD_DATE(문자열 'YYYY-MM-DD') 기준으로 특정 '연도' 데이터만 조회.
+    - 연도 없는 값(NULL/빈문자열)은 포함하지 않음.
+    - 입력: duser_input["target_year"] = "2020" (또는 2020)
+    - 필요 키: duser_input["sqlalchemy_conn"]
+    반환: List[dict] (컬럼명 대문자화, LINE_INDEX는 int로 보정)
     """
+    import traceback
+    from decimal import Decimal
     try:
-        if not os.path.exists(input_pdf):
-            raise FileNotFoundError(f"PDF 파일이 존재하지 않습니다: {input_pdf}")
-        
-        os.makedirs(output_dir, exist_ok=True)
-        reader = PdfReader(input_pdf)
+        target_year = str(duser_input.get("target_year") or "").strip()
+        if not target_year.isdigit() or len(target_year) != 4:
+            raise ValueError("duser_input['target_year']는 'YYYY' 형식의 연도 문자열이어야 합니다. 예: '2020'")
 
-        logging.info(f"총 {len(reader.pages)} 페이지 발견")
+        from_date = f"{target_year}-01-01"
+        to_date   = f"{int(target_year)+1}-01-01"
 
-        for page_num, page in enumerate(reader.pages, start=1):
-            writer = PdfWriter()
-            writer.add_page(page)
+        conn = duser_input["sqlalchemy_conn"]  # SQLAlchemy Engine or Connection
+        # Engine이면 연결 생성
+        if hasattr(conn, "connect"):
+            _conn = conn.connect()
+            should_close = True
+        else:
+            _conn = conn
+            should_close = False
 
-            output_file = os.path.join(output_dir, f"page_{page_num}.pdf")
-            with open(output_file, "wb") as f:
-                writer.write(f)
+        from sqlalchemy import text
+        sql = text("""
+            SELECT 
+                FIID,
+                GUBUN,
+                SEQ AS LINE_INDEX,
+                ATTACH_FILE,
+                FILE_PATH,
+                APPR_COMPLTD_STD_DATE
+            FROM LDCOM_CARDFILE_LOG
+            WHERE APPR_COMPLTD_STD_DATE IS NOT NULL
+              AND TRIM(APPR_COMPLTD_STD_DATE) <> ''
+              AND APPR_COMPLTD_STD_DATE >= :from_date
+              AND APPR_COMPLTD_STD_DATE <  :to_date
+            ORDER BY SEQ
+        """)
 
-            logging.info(f"{page_num} 페이지 저장 완료 -> {output_file}")
+        result = _conn.execute(sql, {"from_date": from_date, "to_date": to_date})
+        rows = result.fetchall()
 
-        logging.info("PDF 분할 완료")
+        records = []
+        keys = [k.upper() for k in result.keys()]
+        for row in rows:
+            rec = {}
+            for k, v in zip(keys, row):
+                if k == "LINE_INDEX" and isinstance(v, Decimal):
+                    v = int(v)
+                rec[k] = v
+            records.append(rec)
+        return records
 
     except Exception as e:
-        logging.error(f"PDF 분할 중 오류 발생: {e}", exc_info=True)
-
-
-if __name__ == "__main__":
-    input_pdf_path = "example.pdf"      # 분할할 PDF 경로
-    output_directory = "output_pages"   # 결과 저장 폴더
-    split_pdf_by_pages(input_pdf_path, output_directory)
-
-
-너는 OCR을 수행해서 문서의 표 데이터를 JSON으로 구조화하는 역할을 한다.  
-아래에 첨부한 대기시험성적서 이미지에서 다음 두 개의 테이블을 추출하라:
-
-1. **시료채취 부분**  
-- 필드: 시료채취일, 시료채취자, 측정분석자, 측정시간, 측정분석방법(기기명), 비고
-
-2. **측정·분석 결과 부분**  
-- 항목(먼지, THC 등), 허용기준, 측정결과, 측정단위
-
-출력은 반드시 JSON 형식으로 한다.  
-각 표는 별도의 key를 두어 구조화하라.  
-
-예시 출력 형식:
-{
-  "시료채취": {
-    "시료채취일": "2021.5.6.",
-    "시료채취자": " ",
-    "측정분석자": " ",
-    "측정시간": " ",
-    "측정분석방법": " ",
-    "비고": " "
-  },
-  "측정분석결과": [
-    {
-      "항목": "먼지",
-      "허용기준": "30 (mg/Sm³)",
-      "측정결과": "10.3",
-      "단위": "mg/Sm³"
-    },
-    {
-      "항목": "THC로서",
-      "허용기준": "110 (ppm)",
-      "측정결과": "20.8",
-      "단위": "ppm"
-    }
-  ]
-}
-
-
+        print(f"[ERROR] query_data_by_year 실패: {e}")
+        traceback.print_exc()
+        return []
+    finally:
+        try:
+            if should_close:
+                _conn.close()
+        except Exception:
+            pass
