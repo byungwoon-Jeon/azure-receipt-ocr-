@@ -1,68 +1,7 @@
-def query_data_by_year(duser_input: dict) -> list:
-    """
-    APPR_COMPLTD_STD_DATE(문자열 'YYYY-MM-DD') 기준으로 특정 '연도' 데이터만 조회.
-    - 연도 없는 값(NULL/빈문자열)은 포함하지 않음.
-    - 입력: duser_input["target_year"] = "2020" (또는 2020)
-    - 필요 키: duser_input["sqlalchemy_conn"]
-    반환: List[dict] (컬럼명 대문자화, LINE_INDEX는 int로 보정)
-    """
-    import traceback
-    from decimal import Decimal
+def _safe_remove(path: str):
     try:
-        target_year = str(duser_input.get("target_year") or "").strip()
-        if not target_year.isdigit() or len(target_year) != 4:
-            raise ValueError("duser_input['target_year']는 'YYYY' 형식의 연도 문자열이어야 합니다. 예: '2020'")
-
-        from_date = f"{target_year}-01-01"
-        to_date   = f"{int(target_year)+1}-01-01"
-
-        conn = duser_input["sqlalchemy_conn"]  # SQLAlchemy Engine or Connection
-        # Engine이면 연결 생성
-        if hasattr(conn, "connect"):
-            _conn = conn.connect()
-            should_close = True
-        else:
-            _conn = conn
-            should_close = False
-
-        from sqlalchemy import text
-        sql = text("""
-            SELECT 
-                FIID,
-                GUBUN,
-                SEQ AS LINE_INDEX,
-                ATTACH_FILE,
-                FILE_PATH,
-                APPR_COMPLTD_STD_DATE
-            FROM LDCOM_CARDFILE_LOG
-            WHERE APPR_COMPLTD_STD_DATE IS NOT NULL
-              AND TRIM(APPR_COMPLTD_STD_DATE) <> ''
-              AND APPR_COMPLTD_STD_DATE >= :from_date
-              AND APPR_COMPLTD_STD_DATE <  :to_date
-            ORDER BY SEQ
-        """)
-
-        result = _conn.execute(sql, {"from_date": from_date, "to_date": to_date})
-        rows = result.fetchall()
-
-        records = []
-        keys = [k.upper() for k in result.keys()]
-        for row in rows:
-            rec = {}
-            for k, v in zip(keys, row):
-                if k == "LINE_INDEX" and isinstance(v, Decimal):
-                    v = int(v)
-                rec[k] = v
-            records.append(rec)
-        return records
-
+        if path and os.path.exists(path):
+            os.remove(path)
+            logger.info(f"[정리] 파일 삭제: {path}")
     except Exception as e:
-        print(f"[ERROR] query_data_by_year 실패: {e}")
-        traceback.print_exc()
-        return []
-    finally:
-        try:
-            if should_close:
-                _conn.close()
-        except Exception:
-            pass
+        logger.warning(f"[정리 실패] {path} 삭제 오류: {e}")
