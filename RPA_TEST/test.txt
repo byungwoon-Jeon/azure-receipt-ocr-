@@ -1,49 +1,40 @@
-def query_year_excluding_A(duser_input: dict, db_config: dict, exclude_table: str = "A") -> list:
+import os
+import logging
+from PIL import Image
+
+logger = logging.getLogger("PREPROCESS")
+
+def convert_to_png(input_path: str, output_dir: str, fiid: str) -> str:
     """
-    LDCOM_CARDFILE_LOG에서 지정 연도의 데이터를 가져오되,
-    exclude_table(A)에 (FIID, LINE_INDEX) 조합이 존재하면 제외.
-
-    입력:
-    - duser_input["target_year"]: "2020" 같은 연도 문자열
-    - db_config: DB 연결 설정
-    - exclude_table: 기본은 "A" 테이블 (스키마 필요하면 "SCHEMA.A" 형태로 넘겨도 됨)
-
-    반환:
-    - List[dict]: idp_db_manager.excute_queris 결과
+    입력 파일을 PNG로 변환하고, 파일명 끝에 FIID를 붙여서 저장한다.
+    
+    Args:
+        input_path (str): 변환할 원본 파일 경로
+        output_dir (str): 변환된 파일을 저장할 디렉토리
+        fiid (str): 파일명 끝에 붙일 식별자
+    
+    Returns:
+        str: 변환된 PNG 파일 경로
     """
-    target_year = str(duser_input.get("target_year", "")).strip()
-    if not (target_year.isdigit() and len(target_year) == 4):
-        raise ValueError("duser_input['target_year']는 'YYYY' 형식 문자열이어야 합니다. 예: '2020'")
+    try:
+        if not os.path.exists(input_path):
+            raise FileNotFoundError(f"Input file not found: {input_path}")
+        if not os.path.isdir(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
 
-    from_date = f"{target_year}-01-01"
-    to_date   = f"{int(target_year) + 1}-01-01"
+        basename = os.path.basename(input_path)
+        filename, _ = os.path.splitext(basename)
 
-    query_sql = f"""
-        SELECT
-            I.FIID,
-            I.GUBUN,
-            I.LINE_INDEX,
-            I.ATTACH_FILE,
-            I.FILE_PATH,
-            I.APPR_COMPLTD_STD_DATE
-        FROM LDCOM_CARDFILE_LOG AS I
-        WHERE I.APPR_COMPLTD_STD_DATE IS NOT NULL
-          AND TRIM(I.APPR_COMPLTD_STD_DATE) <> ''
-          AND I.APPR_COMPLTD_STD_DATE >= :from_date
-          AND I.APPR_COMPLTD_STD_DATE <  :to_date
-          AND NOT EXISTS (
-                SELECT 1
-                FROM {exclude_table} AS A
-                WHERE A.FIID = I.FIID
-                  AND A.LINE_INDEX = I.LINE_INDEX
-          )
-        ORDER BY I.APPR_COMPLTD_STD_DATE, I.FIID, I.LINE_INDEX
-    """
+        # FIID 붙이기
+        output_filename = f"{filename}_{fiid}.png"
+        output_path = os.path.join(output_dir, output_filename)
 
-    params = {"from_date": from_date, "to_date": to_date}
+        with Image.open(input_path) as img:
+            img.convert("RGB").save(output_path, "PNG")
 
-    return idp_db_manager.excute_queris(
-        quries=[query_sql],
-        params=[params],
-        db_config=db_config
-    ) or []
+        logger.info(f"Converted {input_path} -> {output_path}")
+        return output_path
+
+    except Exception as e:
+        logger.error(f"convert_to_png failed for {input_path}: {e}", exc_info=True)
+        raise
