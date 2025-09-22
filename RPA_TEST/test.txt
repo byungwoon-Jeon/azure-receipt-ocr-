@@ -1,40 +1,88 @@
-import os
-import logging
-from PIL import Image
+좋아 👍 그럼 요청하신 24개 항목 전체를 한국어 필드명 + 영어 규칙 설명으로 정리해줄게.
 
-logger = logging.getLogger("PREPROCESS")
+⸻
 
-def convert_to_png(input_path: str, output_dir: str, fiid: str) -> str:
-    """
-    입력 파일을 PNG로 변환하고, 파일명 끝에 FIID를 붙여서 저장한다.
-    
-    Args:
-        input_path (str): 변환할 원본 파일 경로
-        output_dir (str): 변환된 파일을 저장할 디렉토리
-        fiid (str): 파일명 끝에 붙일 식별자
-    
-    Returns:
-        str: 변환된 PNG 파일 경로
-    """
-    try:
-        if not os.path.exists(input_path):
-            raise FileNotFoundError(f"Input file not found: {input_path}")
-        if not os.path.isdir(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
+General fields
+	•	“sems번호”
+	•	Always a three-digit numeric code.
+	•	It may appear inside the “굴뚝명칭” field instead of being a separate field.
+	•	Extract only the numeric part.
+	•	“굴뚝 명칭”
+	•	Free text (letters, numbers, special symbols like #A@@@).
+	•	Preserve the original string without trimming.
+	•	“배출구 높이”
+	•	Numeric value only (meters).
+	•	Remove units (e.g., “m”).
+	•	“안지름 또는 측정공”
+	•	Numeric value only (mm).
+	•	Remove units.
+	•	“측정일자”
+	•	Must be 8 digits in YYYYMMDD format.
+	•	Extract numbers only.
+	•	“측정 시간”
+	•	Must be 4 digits in HHMM format.
+	•	Extract numbers only.
+	•	“배출가스 유속”
+	•	Numeric value (decimals allowed).
+	•	Remove units (e.g., “m/s”).
+	•	“배출가스 온도”
+	•	Numeric value (decimals allowed).
+	•	Remove units (e.g., “℃”).
+	•	“수분량”
+	•	Numeric value (decimals allowed).
+	•	Remove units (e.g., “%”).
+	•	“실측산소농도”
+	•	Numeric value (decimals allowed).
+	•	Remove units.
+	•	“표준 산소 농도”
+	•	Numeric value (decimals allowed).
+	•	Remove units.
+	•	“배출가스 유량”
+	•	Numeric value (decimals allowed).
+	•	Use the unadjusted value (before O₂ correction).
+	•	Remove units (e.g., “㎥/min”).
+	•	“날씨”
+	•	If given as numeric (e.g., code), return number.
+	•	If only text (e.g., “맑음”), keep string.
+	•	“기온”
+	•	Numeric value (decimals allowed).
+	•	Remove units (℃).
+	•	“습도”
+	•	Numeric value (decimals allowed).
+	•	Remove units (%).
+	•	“기압”
+	•	Numeric value (decimals allowed).
+	•	Remove units (hPa).
+	•	“풍향”
+	•	Text string (e.g., “북풍”, “남서풍”).
+	•	Preserve as-is.
+	•	“풍속”
+	•	Numeric value (decimals allowed).
+	•	Remove units (m/s).
+	•	“책임 기술인”
+	•	Text string (engineer’s name).
+	•	“측정 용도”
+	•	Text string, expected values: “자가측정용” or “참고용”.
+	•	“상호”
+	•	Text string (company name).
 
-        basename = os.path.basename(input_path)
-        filename, _ = os.path.splitext(basename)
+⸻
 
-        # FIID 붙이기
-        output_filename = f"{filename}_{fiid}.png"
-        output_path = os.path.join(output_dir, output_filename)
+Table fields (반드시 테이블 구조로 추출)
+	•	“측정항목”
+	•	Text string.
+	•	Each row in the measurement table.
+	•	“배출허용기준”
+	•	Numeric value (decimals allowed).
+	•	Remove units.
+	•	Synonyms: “허용기준”, “관련기준”.
+	•	“측정 분석 값”
+	•	Numeric value if detected.
+	•	If not detected, return literal string “불검출”.
+	•	Synonyms: “측정값”, “측정결과”.
 
-        with Image.open(input_path) as img:
-            img.convert("RGB").save(output_path, "PNG")
+⸻
 
-        logger.info(f"Converted {input_path} -> {output_path}")
-        return output_path
+👉 이렇게 하면 LLM이 한국어 필드명을 유지하면서도, 영어로 된 추출 규칙을 따라 안정적으로 JSON에 채워줄 수 있어.
 
-    except Exception as e:
-        logger.error(f"convert_to_png failed for {input_path}: {e}", exc_info=True)
-        raise
+원하면 내가 이걸 바로 버텍스에 넣을 수 있는 instruction block(system prompt 형태)으로도 묶어줄까?
