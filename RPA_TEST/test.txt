@@ -1,88 +1,99 @@
-좋아 👍 그럼 요청하신 24개 항목 전체를 한국어 필드명 + 영어 규칙 설명으로 정리해줄게.
+좋은 포인트야 👍 네가 준 설명을 바탕으로 정리하면, 지금 항목들은 크게 General fields(단일 값)과 Table fields(반복되는 행 단위 값)으로 나눌 수 있어.
+
+특히
+	•	“배출가스” 영역에 있는 값들(유속, 가스온도, 수분량, 산소농도 등)
+	•	“현장 기상” 영역에 있는 값들(날씨, 기온, 습도, 기압, 풍향, 풍속)
+
+👉 이 두 그룹은 실제 문서에서는 표 형태로 나타나는 경우가 많아서, 테이블 필드로 관리하는 게 더 안정적이야.
+
+아래는 영문 규칙 설명 + 한국어 항목명 유지 형태로 LLM 프롬프트 정의를 만들어본 거야.
 
 ⸻
 
 General fields
 	•	“sems번호”
 	•	Always a three-digit numeric code.
-	•	It may appear inside the “굴뚝명칭” field instead of being a separate field.
-	•	Extract only the numeric part.
+	•	Located inside “굴뚝 명칭” or “대상의 명칭”.
+	•	Extraction patterns:
+	•	C-M16 320 (#A653) → 320
+	•	M14 F03 DRY_#234_#A565(221) → 221
+	•	M10-VSC_301A/B (148 (#A125)) → 148
+	•	Rule: Extract the last standalone three-digit number in parentheses or suffix.
 	•	“굴뚝 명칭”
-	•	Free text (letters, numbers, special symbols like #A@@@).
-	•	Preserve the original string without trimming.
+	•	Found in “굴뚝 명칭” or “대상의 명칭”.
+	•	Must match format #A### (hash A followed by three digits).
 	•	“배출구 높이”
-	•	Numeric value only (meters).
-	•	Remove units (e.g., “m”).
-	•	“안지름 또는 측정공”
-	•	Numeric value only (mm).
-	•	Remove units.
-	•	“측정일자”
-	•	Must be 8 digits in YYYYMMDD format.
-	•	Extract numbers only.
+	•	Found in “높이”.
+	•	Value in meters. Extract only numeric (decimal allowed).
+	•	“안지름(측정공)”
+	•	Found in “안지름”.
+	•	Value in meters. Extract only numeric (decimal allowed).
+	•	“측정 일자”
+	•	Found in “채취 일시 → 채취 일”.
+	•	Must be 8-digit format YYYYMMDD.
 	•	“측정 시간”
-	•	Must be 4 digits in HHMM format.
-	•	Extract numbers only.
-	•	“배출가스 유속”
-	•	Numeric value (decimals allowed).
-	•	Remove units (e.g., “m/s”).
-	•	“배출가스 온도”
-	•	Numeric value (decimals allowed).
-	•	Remove units (e.g., “℃”).
-	•	“수분량”
-	•	Numeric value (decimals allowed).
-	•	Remove units (e.g., “%”).
-	•	“실측산소농도”
-	•	Numeric value (decimals allowed).
-	•	Remove units.
-	•	“표준 산소 농도”
-	•	Numeric value (decimals allowed).
-	•	Remove units.
-	•	“배출가스 유량”
-	•	Numeric value (decimals allowed).
-	•	Use the unadjusted value (before O₂ correction).
-	•	Remove units (e.g., “㎥/min”).
-	•	“날씨”
-	•	If given as numeric (e.g., code), return number.
-	•	If only text (e.g., “맑음”), keep string.
-	•	“기온”
-	•	Numeric value (decimals allowed).
-	•	Remove units (℃).
-	•	“습도”
-	•	Numeric value (decimals allowed).
-	•	Remove units (%).
-	•	“기압”
-	•	Numeric value (decimals allowed).
-	•	Remove units (hPa).
-	•	“풍향”
-	•	Text string (e.g., “북풍”, “남서풍”).
-	•	Preserve as-is.
-	•	“풍속”
-	•	Numeric value (decimals allowed).
-	•	Remove units (m/s).
-	•	“책임 기술인”
-	•	Text string (engineer’s name).
-	•	“측정 용도”
-	•	Text string, expected values: “자가측정용” or “참고용”.
+	•	Found in “채취 일시 → 채취 시간”.
+	•	Use the end time.
+	•	Must be 4-digit format HHMM.
+	•	“환경기술인”
+	•	Found in “환경기술인”.
+	•	Return name as string.
+	•	“측정용도”
+	•	Found in “측정용도”.
+	•	Return as string (expected: “자가측정용” or “참고용”).
 	•	“상호”
-	•	Text string (company name).
+	•	Found in “상호”, “기관명”, or “업체명”.
+	•	Return company name as string.
 
 ⸻
 
-Table fields (반드시 테이블 구조로 추출)
-	•	“측정항목”
-	•	Text string.
-	•	Each row in the measurement table.
-	•	“배출허용기준”
-	•	Numeric value (decimals allowed).
-	•	Remove units.
-	•	Synonyms: “허용기준”, “관련기준”.
-	•	“측정 분석 값”
-	•	Numeric value if detected.
-	•	If not detected, return literal string “불검출”.
-	•	Synonyms: “측정값”, “측정결과”.
+Table fields
+
+Table 1: 배출가스 정보 (gas_measurements)
+	•	“배출가스 유속”
+	•	Found in “배출가스 → 유속” or “배출가스 유속”.
+	•	Numeric only (decimal allowed).
+	•	“배출가스 온도”
+	•	Found in “배출가스 온도” or “배출가스 → 가스온도”.
+	•	Numeric only (decimal allowed).
+	•	“수분량”
+	•	Found in “배출가스 → 수분량”.
+	•	Numeric only (decimal allowed).
+	•	“실측 산소 농도”
+	•	Found in “배출가스 → 실측산소농도”.
+	•	Numeric only (decimal allowed).
 
 ⸻
 
-👉 이렇게 하면 LLM이 한국어 필드명을 유지하면서도, 영어로 된 추출 규칙을 따라 안정적으로 JSON에 채워줄 수 있어.
+Table 2: 현장 기상 정보 (weather_conditions)
+	•	“날씨”
+	•	Found in “현장 기상 → 날씨”.
+	•	Return as string (e.g., “맑음”, “흐림”).
+	•	“기온”
+	•	Found in “현장 기상 → 기온”.
+	•	Numeric only (decimal allowed).
+	•	“습도”
+	•	Found in “현장 기상 → 습도”.
+	•	Numeric only (decimal allowed).
+	•	“기압”
+	•	Found in “현장 기상 → 기압”.
+	•	Numeric only (decimal allowed).
+	•	“풍향”
+	•	Found in “현장 기상 → 풍향”.
+	•	Return as string (e.g., “북풍”, “남서풍”).
+	•	“풍속”
+	•	Found in “현장 기상 → 풍속”.
+	•	Numeric only (decimal allowed).
 
-원하면 내가 이걸 바로 버텍스에 넣을 수 있는 instruction block(system prompt 형태)으로도 묶어줄까?
+⸻
+
+📌 정리 포인트
+	•	“sems번호” & “굴뚝 명칭”은 General fields.
+	•	“배출가스”와 “현장 기상” 항목들은 각각 별도 테이블로 관리 (row 단위).
+	•	나머지 단일 항목들(날짜, 시간, 용도, 상호 등)은 General fields.
+
+⸻
+
+👉 이렇게 테이블 분리를 해주면 버텍스에서 추출된 JSON 구조도 더 안정적으로 잡혀.
+
+원해? 내가 이걸 바로 버텍스에 넣을 수 있는 JSON 스키마 예시(General_fields + table_fields 두 개 테이블 구조)로 정리해줄까?
