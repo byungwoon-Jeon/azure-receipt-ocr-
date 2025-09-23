@@ -96,4 +96,56 @@ Table 2: 현장 기상 정보 (weather_conditions)
 
 👉 이렇게 테이블 분리를 해주면 버텍스에서 추출된 JSON 구조도 더 안정적으로 잡혀.
 
-원해? 내가 이걸 바로 버텍스에 넣을 수 있는 JSON 스키마 예시(General_fields + table_fields 두 개 테이블 구조)로 정리해줄까?
+원해? 내가 이걸 바로 버텍스에 넣을 수 있는 JSON 
+
+좋은 피드백이야 👍 지금 말해준 **“굴뚝 명칭”**과 “상호” 조건을 반영해서 프롬프트 규칙을 더 정밀하게 수정해줄게.
+
+⸻
+
+General fields (수정 버전)
+	•	“sems번호”
+	•	Always a three-digit numeric code.
+	•	Located inside “굴뚝 명칭” or “대상의 명칭”.
+	•	Extraction patterns:
+	•	C-M16 320 (#A653) → 320
+	•	M14 F03 DRY_#234_#A565(221) → 221
+	•	M10-VSC_301A/B (148 (#A125)) → 148
+	•	Rule: Extract the last standalone three-digit number inside parentheses or suffix.
+	•	“굴뚝 명칭”
+	•	Found in “굴뚝 명칭” or “대상의 명칭”.
+	•	Rule: Extract only the substring that matches #A### format (hash A + three digits).
+	•	Do not return the entire string, return only the #A### pattern.
+	•	Example:
+	•	C-M16 320 (#A653) → #A653
+	•	M14 F03 DRY_#234_#A565(221) → #A565
+	•	M10-VSC_301A/B (148 (#A125)) → #A125
+	•	“상호”
+	•	Found in “상호”, “기관명”, or “업체명”.
+	•	Rule: If multiple occurrences exist, extract the one located at the bottom part of the page.
+	•	Expected to be company or organization name (string).
+
+⸻
+
+테이블 항목 그대로 유지
+	•	“배출가스” 관련 항목들은 gas_measurements 테이블.
+	•	“현장 기상” 관련 항목들은 weather_conditions 테이블.
+
+⸻
+
+📌 요약 반영된 변경점
+	1.	굴뚝 명칭 → 전체 문장이 아니라 #A### 패턴만 추출.
+	2.	상호 → 반드시 페이지 하단에 위치한 값을 추출.
+
+⸻
+
+👉 원하면 내가 이걸 아예 Vertex AI 프롬프트 instruction block으로 정리해서,
+	•	General_fields (수정된 규칙 반영)
+	•	table_fields (배출가스 + 현장 기상)
+형태의 JSON 스키마 예시까지 만들어줄 수도 있어.
+
+그렇게 해줄까?
+
+
+
+
+스키마 예시(General_fields + table_fields 두 개 테이블 구조)로 정리해줄까?
