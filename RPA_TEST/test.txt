@@ -24,3 +24,55 @@ def query_rpa_ccr_line_summ(duser_input: dict, db_config: dict, from_date: str, 
         params=[params],
         db_config=db_config
     ) or []
+
+
+
+import re
+import logging
+
+logger = logging.getLogger("APPROVAL_NO")
+
+def extract_approval_no(contents: str) -> str | None:
+    """
+    CONTENTS 문자열에서 승인번호(승인번호/승인NO/승인코드/Auth No/Auth Code/Approval No 등)를 추출한다.
+    - 라벨과 값이 같은 줄 or 다른 줄(바로 다음 줄) 모두 처리
+    - 값은 6~10자리 숫자 또는 영문+숫자 조합만 인정
+    - 여러 개 발견 시 첫 번째만 반환, 나머지는 로그로 남김
+    """
+
+    if not contents:
+        return None
+
+    # 라벨 패턴
+    label_pattern = re.compile(
+        r"(승인\s*(번호|NO|코드)|Auth(entication)?(\s*No|\s*Code)?|Approval\s*No)",
+        re.IGNORECASE
+    )
+
+    # 값 패턴 (6~10자리 숫자/영문)
+    value_pattern = re.compile(r"[0-9A-Za-z]{6,10}")
+
+    lines = contents.splitlines()
+    candidates = []
+
+    for i, line in enumerate(lines):
+        if label_pattern.search(line):
+            # 1) 같은 줄에 값 있는 경우
+            m = value_pattern.search(line)
+            if m:
+                candidates.append(m.group())
+                continue
+
+            # 2) 다음 줄에서 값 찾기
+            if i + 1 < len(lines):
+                m = value_pattern.search(lines[i + 1])
+                if m:
+                    candidates.append(m.group())
+
+    if not candidates:
+        return None
+
+    if len(candidates) > 1:
+        logger.warning(f"[승인번호] 여러 개 발견됨 → {candidates} (첫 번째만 사용)")
+
+    return candidates[0]
