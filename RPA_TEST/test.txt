@@ -1,20 +1,26 @@
-좋은 디테일 추가야 👍 그럼 프롬프트 규칙에 숫자 값 추출 시 “이하” 같은 단위/수식어는 제거하라는 문구를 넣어주면 돼.
+def query_rpa_ccr_line_summ(duser_input: dict, db_config: dict, from_date: str, to_date: str) -> list:
+    """
+    RPA_CCR_LINE_SUMM에서 CREATE_DATE 기준으로 데이터 조회
+    - 키값(FIID, LINE_INDEX, RECEIPT_INDEX, COMMON_YN) + CONTENTS + RESULT_CODE 반환
+    """
+    query_sql = """
+        SELECT 
+            FIID,
+            LINE_INDEX,
+            RECEIPT_INDEX,
+            COMMON_YN,
+            CONTENTS,
+            RESULT_CODE
+        FROM RPA_CCR_LINE_SUMM
+        WHERE CREATE_DATE >= :from_date
+          AND CREATE_DATE <  :to_date
+        ORDER BY CREATE_DATE, FIID, LINE_INDEX, RECEIPT_INDEX
+    """
 
-⸻
+    params = {"from_date": from_date, "to_date": to_date}
 
-추가 문구 (공통 규칙에 포함)
-	•	Numeric extraction rule
-	•	Always return only the numeric value (integer or decimal).
-	•	Remove any units (e.g., m, ℃, %, ㎥/min, hPa, m/s).
-	•	Remove additional qualifiers such as “이하”, “이상”, “초과”, “미만”.
-	•	Example:
-	•	"20.5 m/s" → "20.5"
-	•	"30 이하" → "30"
-	•	"15 이상" → "15"
-
-⸻
-
-📌 이 문구를 프롬프트의 **공통 규칙 (Common rules)**에 넣어두면,
-배출가스, 현장기상, 높이/직경 같은 수치 필드에 전부 적용돼.
-
-👉 내가 이걸 반영해서 전체 Vertex AI 프롬프트 instruction block (General_fields + Table_fields JSON 스키마) 최종본을 만들어줄까?
+    return idp_db_manager.excute_queris(
+        quries=[query_sql],
+        params=[params],
+        db_config=db_config
+    ) or []
