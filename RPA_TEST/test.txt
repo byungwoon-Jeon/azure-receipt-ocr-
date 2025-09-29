@@ -1,121 +1,124 @@
-def query_rpa_ccr_line_summ(duser_input: dict, db_config: dict, from_date: str, to_date: str) -> list:
-    """
-    RPA_CCR_LINE_SUMM에서 CREATE_DATE 기준으로 데이터 조회
-    - 키값(FIID, LINE_INDEX, RECEIPT_INDEX, COMMON_YN) + CONTENTS + RESULT_CODE 반환
-    """
-    query_sql = """
-        SELECT 
-            FIID,
-            LINE_INDEX,
-            RECEIPT_INDEX,
-            COMMON_YN,
-            CONTENTS,
-            RESULT_CODE
-        FROM RPA_CCR_LINE_SUMM
-        WHERE CREATE_DATE >= :from_date
-          AND CREATE_DATE <  :to_date
-        ORDER BY CREATE_DATE, FIID, LINE_INDEX, RECEIPT_INDEX
-    """
-
-    params = {"from_date": from_date, "to_date": to_date}
-
-    return idp_db_manager.excute_queris(
-        quries=[query_sql],
-        params=[params],
-        db_config=db_config
-    ) or []
-
-
-
-import re
-import logging
-from typing import Optional
-
-logger = logging.getLogger("APPROVAL_NO")
-
-def extract_approval_no(contents: str) -> Optional[str]:
-    """
-    CONTENTS 문자열에서 승인번호(승인번호/승인NO/승인코드/Auth No/Auth Code/Approval No 등)를 추출한다.
-    - 라벨과 값이 같은 줄 or 다른 줄(바로 다음 줄) 모두 처리
-    - 값은 6~10자리 숫자 또는 영문+숫자 조합만 인정
-    - 여러 개 발견 시 첫 번째만 반환, 나머지는 로그로 남김
-    - '1234 5678' 같은 공백 포함 케이스도 지원 (→ 12345678로 변환)
-    """
-    if not contents:
-        return None
-
-    # 라벨 패턴
-    label_pattern = re.compile(
-        r"(승인\s*(번호|NO|코드)|Auth(entication)?(\s*No|\s*Code)?|Approval\s*No)",
-        re.IGNORECASE
+# --- 기존 INSERT 요약(sql) 자리에 교체 ---
+merge_summ_sql = text("""
+MERGE INTO MISADM.RPA_CCR_LINE_SUMM AS T
+USING (
+    SELECT
+        :FIID           AS FIID,
+        :GUBUN          AS GUBUN,
+        :LINE_INDEX     AS LINE_INDEX,
+        :RECEIPT_INDEX  AS RECEIPT_INDEX,
+        :COMMON_YN      AS COMMON_YN,
+        :ATTACH_FILE    AS ATTACH_FILE,
+        :COUNTRY        AS COUNTRY,
+        :RECEIPT_TYPE   AS RECEIPT_TYPE,
+        :MERCHANT_NAME  AS MERCHANT_NAME,
+        :MERCHANT_PHONE_NO AS MERCHANT_PHONE_NO,
+        :DELIVERY_ADDR  AS DELIVERY_ADDR,
+        :TRANSACTION_DATE AS TRANSACTION_DATE,
+        :TRANSACTION_TIME AS TRANSACTION_TIME,
+        :TOTAL_AMOUNT   AS TOTAL_AMOUNT,
+        :SUMTOTAL_AMOUNT AS SUMTOTAL_AMOUNT,
+        :TAX_AMOUNT     AS TAX_AMOUNT,
+        :BIZ_NO         AS BIZ_NO,
+        :APPROVAL_NO    AS APPROVAL_NO,
+        :RESULT_CODE    AS RESULT_CODE,
+        :RESULT_MESSAGE AS RESULT_MESSAGE,
+        :CREATE_DATE    AS CREATE_DATE
+    FROM DUMMY
+) AS S
+ON (
+    T.FIID = S.FIID
+    AND T.LINE_INDEX = S.LINE_INDEX
+    AND T.RECEIPT_INDEX = S.RECEIPT_INDEX
+    AND T.COMMON_YN = S.COMMON_YN
+)
+WHEN MATCHED THEN
+    UPDATE SET
+        T.GUBUN = S.GUBUN,
+        T.ATTACH_FILE = S.ATTACH_FILE,
+        T.COUNTRY = S.COUNTRY,
+        T.RECEIPT_TYPE = S.RECEIPT_TYPE,
+        T.MERCHANT_NAME = S.MERCHANT_NAME,
+        T.MERCHANT_PHONE_NO = S.MERCHANT_PHONE_NO,
+        T.DELIVERY_ADDR = S.DELIVERY_ADDR,
+        T.TRANSACTION_DATE = S.TRANSACTION_DATE,
+        T.TRANSACTION_TIME = S.TRANSACTION_TIME,
+        T.TOTAL_AMOUNT = S.TOTAL_AMOUNT,
+        T.SUMTOTAL_AMOUNT = S.SUMTOTAL_AMOUNT,
+        T.TAX_AMOUNT = S.TAX_AMOUNT,
+        T.BIZ_NO = S.BIZ_NO,
+        T.APPROVAL_NO = S.APPROVAL_NO,
+        T.RESULT_CODE = S.RESULT_CODE,
+        T.RESULT_MESSAGE = S.RESULT_MESSAGE,
+        T.UPDATE_DATE = CURRENT_TIMESTAMP
+WHEN NOT MATCHED THEN
+    INSERT (
+        FIID, GUBUN, LINE_INDEX, RECEIPT_INDEX, COMMON_YN, ATTACH_FILE,
+        COUNTRY, RECEIPT_TYPE, MERCHANT_NAME, MERCHANT_PHONE_NO,
+        DELIVERY_ADDR, TRANSACTION_DATE, TRANSACTION_TIME,
+        TOTAL_AMOUNT, SUMTOTAL_AMOUNT, TAX_AMOUNT, BIZ_NO, APPROVAL_NO,
+        RESULT_CODE, RESULT_MESSAGE, CREATE_DATE, UPDATE_DATE
     )
+    VALUES (
+        S.FIID, S.GUBUN, S.LINE_INDEX, S.RECEIPT_INDEX, S.COMMON_YN, S.ATTACH_FILE,
+        S.COUNTRY, S.RECEIPT_TYPE, S.MERCHANT_NAME, S.MERCHANT_PHONE_NO,
+        S.DELIVERY_ADDR, S.TRANSACTION_DATE, S.TRANSACTION_TIME,
+        S.TOTAL_AMOUNT, S.SUMTOTAL_AMOUNT, S.TAX_AMOUNT, S.BIZ_NO, S.APPROVAL_NO,
+        S.RESULT_CODE, S.RESULT_MESSAGE, S.CREATE_DATE, CURRENT_TIMESTAMP
+    )
+""")
 
-    # 값 패턴 (연속 6~10자리 or 4+4 공백 포함)
-    value_pattern = re.compile(r"[0-9A-Za-z]{6,10}|\d{4}\s+\d{4}")
-
-    lines = contents.splitlines()
-    candidates = []
-
-    for i, line in enumerate(lines):
-        if label_pattern.search(line):
-            # 1) 같은 줄에서 값 찾기
-            m = value_pattern.search(line)
-            if m:
-                candidates.append(m.group().replace(" ", ""))
-                continue
-
-            # 2) 다음 줄에서 값 찾기
-            if i + 1 < len(lines):
-                m = value_pattern.search(lines[i + 1])
-                if m:
-                    candidates.append(m.group().replace(" ", ""))
-
-    if not candidates:
-        return None
-
-    if len(candidates) > 1:
-        logger.warning("[승인번호] 여러 개 발견됨 → %s (첫 번째만 사용)", candidates)
-
-    return candidates[0]
+# 실행
+conn.execute(merge_summ_sql, summary)
 
 
-def update_approval_no(db_config: dict, record: dict, approval_no: str) -> None:
-    """
-    RPA_CCR_LINE_SUMM 테이블에서 특정 키(FIID, LINE_INDEX, RECEIPT_INDEX, COMMON_YN)를 기준으로
-    APPROVAL_NO와 UPDATE_DATE를 무조건 갱신한다.
-    업데이트 성공 시 영향받은 행(rowcount)을 로그로 남긴다.
-    """
-    query_sql = """
-        UPDATE MISADM.RPA_CCR_LINE_SUMM
-        SET APPROVAL_NO = :approval_no,
-            UPDATE_DATE = CURRENT_TIMESTAMP
-        WHERE FIID = :fiid
-          AND LINE_INDEX = :line_index
-          AND RECEIPT_INDEX = :receipt_index
-          AND COMMON_YN = :common_yn
-    """
+# --- 기존 INSERT 아이템(sql) 루프 자리에 교체 ---
+merge_item_sql = text("""
+MERGE INTO MISADM.RPA_CCR_LINE_ITEMS AS T
+USING (
+    SELECT
+        :FIID          AS FIID,
+        :LINE_INDEX    AS LINE_INDEX,
+        :RECEIPT_INDEX AS RECEIPT_INDEX,
+        :ITEM_INDEX    AS ITEM_INDEX,
+        :ITEM_NAME     AS ITEM_NAME,
+        :ITEM_QTY      AS ITEM_QTY,
+        :ITEM_UNIT_PRICE AS ITEM_UNIT_PRICE,
+        :ITEM_TOTAL_PRICE AS ITEM_TOTAL_PRICE,
+        :CONTENTS      AS CONTENTS,
+        :COMMON_YN     AS COMMON_YN,
+        :CREATE_DATE   AS CREATE_DATE
+    FROM DUMMY
+) AS S
+ON (
+    T.FIID = S.FIID
+    AND T.LINE_INDEX = S.LINE_INDEX
+    AND T.RECEIPT_INDEX = S.RECEIPT_INDEX
+    AND T.ITEM_INDEX = S.ITEM_INDEX
+    AND T.COMMON_YN = S.COMMON_YN
+)
+WHEN MATCHED THEN
+    UPDATE SET
+        T.ITEM_NAME = S.ITEM_NAME,
+        T.ITEM_QTY = S.ITEM_QTY,
+        T.ITEM_UNIT_PRICE = S.ITEM_UNIT_PRICE,
+        T.ITEM_TOTAL_PRICE = S.ITEM_TOTAL_PRICE,
+        T.CONTENTS = S.CONTENTS,
+        T.UPDATE_DATE = CURRENT_TIMESTAMP
+WHEN NOT MATCHED THEN
+    INSERT (
+        FIID, LINE_INDEX, RECEIPT_INDEX, ITEM_INDEX,
+        ITEM_NAME, ITEM_QTY, ITEM_UNIT_PRICE, ITEM_TOTAL_PRICE,
+        CONTENTS, COMMON_YN, CREATE_DATE, UPDATE_DATE
+    )
+    VALUES (
+        S.FIID, S.LINE_INDEX, S.RECEIPT_INDEX, S.ITEM_INDEX,
+        S.ITEM_NAME, S.ITEM_QTY, S.ITEM_UNIT_PRICE, S.ITEM_TOTAL_PRICE,
+        S.CONTENTS, S.COMMON_YN, S.CREATE_DATE, CURRENT_TIMESTAMP
+    )
+""")
 
-    params = {
-        "approval_no": approval_no,
-        "fiid": record.get("FIID"),
-        "line_index": record.get("LINE_INDEX"),
-        "receipt_index": record.get("RECEIPT_INDEX"),
-        "common_yn": record.get("COMMON_YN"),
-    }
+for item in items:
+    conn.execute(merge_item_sql, item)
 
-    try:
-        result = idp_db_manager.excute_queris(
-            quries=[query_sql],
-            params=[params],
-            db_config=db_config
-        )
-        # HANA에서는 보통 영향받은 행 수가 반환됨 → 없으면 result 자체 출력
-        rowcount = result[0].get("ROWCOUNT") if result and isinstance(result, list) else None
-
-        logging.info(
-            f"[UPDATE] 승인번호 갱신 (강제 덮어쓰기) → "
-            f"FIID={params['fiid']} LINE={params['line_index']} RECEIPT={params['receipt_index']} "
-            f"APPROVAL_NO={approval_no} | rowcount={rowcount}"
-        )
-    except Exception as e:
-        logging.error(f"[ERROR] 승인번호 갱신 실패 → {params} | {e}")
+conn.commit()
