@@ -77,3 +77,45 @@ def extract_approval_no(contents: str) -> Optional[str]:
         logger.warning("[승인번호] 여러 개 발견됨 → %s (첫 번째만 사용)", candidates)
 
     return candidates[0]
+
+
+def update_approval_no(db_config: dict, record: dict, approval_no: str) -> None:
+    """
+    RPA_CCR_LINE_SUMM 테이블에서 특정 키(FIID, LINE_INDEX, RECEIPT_INDEX, COMMON_YN)를 기준으로
+    APPROVAL_NO와 UPDATE_DATE를 무조건 갱신한다.
+    업데이트 성공 시 영향받은 행(rowcount)을 로그로 남긴다.
+    """
+    query_sql = """
+        UPDATE MISADM.RPA_CCR_LINE_SUMM
+        SET APPROVAL_NO = :approval_no,
+            UPDATE_DATE = CURRENT_TIMESTAMP
+        WHERE FIID = :fiid
+          AND LINE_INDEX = :line_index
+          AND RECEIPT_INDEX = :receipt_index
+          AND COMMON_YN = :common_yn
+    """
+
+    params = {
+        "approval_no": approval_no,
+        "fiid": record.get("FIID"),
+        "line_index": record.get("LINE_INDEX"),
+        "receipt_index": record.get("RECEIPT_INDEX"),
+        "common_yn": record.get("COMMON_YN"),
+    }
+
+    try:
+        result = idp_db_manager.excute_queris(
+            quries=[query_sql],
+            params=[params],
+            db_config=db_config
+        )
+        # HANA에서는 보통 영향받은 행 수가 반환됨 → 없으면 result 자체 출력
+        rowcount = result[0].get("ROWCOUNT") if result and isinstance(result, list) else None
+
+        logging.info(
+            f"[UPDATE] 승인번호 갱신 (강제 덮어쓰기) → "
+            f"FIID={params['fiid']} LINE={params['line_index']} RECEIPT={params['receipt_index']} "
+            f"APPROVAL_NO={approval_no} | rowcount={rowcount}"
+        )
+    except Exception as e:
+        logging.error(f"[ERROR] 승인번호 갱신 실패 → {params} | {e}")
