@@ -122,3 +122,10 @@ for item in items:
     conn.execute(merge_item_sql, item)
 
 conn.commit()
+
+
+SELECT COUNT(*) AS CNT
+FROM LDCOM_CARDFILE_LOG
+WHERE RESULT_CODE = '200'
+  AND (CONTENT IS NULL OR CONTENT = '')
+  AND UPDATE_DATE = '2025-09-30';
