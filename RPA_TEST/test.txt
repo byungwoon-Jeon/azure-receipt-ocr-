@@ -129,3 +129,40 @@ FROM LDCOM_CARDFILE_LOG
 WHERE RESULT_CODE = '200'
   AND (CONTENT IS NULL OR CONTENT = '')
   AND UPDATE_DATE = '2025-09-30';
+
+
+import os
+import logging
+from db_master import insert_postprocessed_result
+
+logger = logging.getLogger("BULK_INSERT")
+
+if __name__ == "__main__":
+    # ✅ 폴더 경로 고정
+    folder_path = r"C:\example\postprocess_output"   # 네 실제 JSON 폴더 경로로 교체
+
+    # ✅ DB 연결 준비 (기존 방식)
+    import tomllib
+    from sqlalchemy import create_engine
+
+    with open("Module_config_dex.toml", "rb") as f:
+        config = tomllib.load(f)
+    hana_conf = config.get("SAP HANA DB")
+
+    conn_str = f"hdbcli://{hana_conf['User']}:{hana_conf['Password']}@{hana_conf['Host']}:{hana_conf['Port']}"
+    engine = create_engine(conn_str)
+    conn = engine.connect()
+
+    duser_input = {"sqlalchemy_conn": conn}
+
+    # ✅ 폴더 내 JSON 파일 모두 처리
+    for fname in sorted(os.listdir(folder_path)):
+        if fname.lower().endswith(".json"):
+            json_path = os.path.join(folder_path, fname)
+            try:
+                logger.info(f"[처리 시작] {json_path}")
+                insert_postprocessed_result(json_path, duser_input)
+            except Exception as e:
+                logger.error(f"[실패] {json_path} | {e}")
+
+    conn.close()
