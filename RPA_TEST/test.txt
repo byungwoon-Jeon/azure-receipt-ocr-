@@ -1,198 +1,77 @@
-# --- 기존 INSERT 요약(sql) 자리에 교체 ---
-merge_summ_sql = text("""
-MERGE INTO MISADM.RPA_CCR_LINE_SUMM AS T
-USING (
-    SELECT
-        :FIID           AS FIID,
-        :GUBUN          AS GUBUN,
-        :LINE_INDEX     AS LINE_INDEX,
-        :RECEIPT_INDEX  AS RECEIPT_INDEX,
-        :COMMON_YN      AS COMMON_YN,
-        :ATTACH_FILE    AS ATTACH_FILE,
-        :COUNTRY        AS COUNTRY,
-        :RECEIPT_TYPE   AS RECEIPT_TYPE,
-        :MERCHANT_NAME  AS MERCHANT_NAME,
-        :MERCHANT_PHONE_NO AS MERCHANT_PHONE_NO,
-        :DELIVERY_ADDR  AS DELIVERY_ADDR,
-        :TRANSACTION_DATE AS TRANSACTION_DATE,
-        :TRANSACTION_TIME AS TRANSACTION_TIME,
-        :TOTAL_AMOUNT   AS TOTAL_AMOUNT,
-        :SUMTOTAL_AMOUNT AS SUMTOTAL_AMOUNT,
-        :TAX_AMOUNT     AS TAX_AMOUNT,
-        :BIZ_NO         AS BIZ_NO,
-        :APPROVAL_NO    AS APPROVAL_NO,
-        :RESULT_CODE    AS RESULT_CODE,
-        :RESULT_MESSAGE AS RESULT_MESSAGE,
-        :CREATE_DATE    AS CREATE_DATE
-    FROM DUMMY
-) AS S
-ON (
-    T.FIID = S.FIID
-    AND T.LINE_INDEX = S.LINE_INDEX
-    AND T.RECEIPT_INDEX = S.RECEIPT_INDEX
-    AND T.COMMON_YN = S.COMMON_YN
-)
-WHEN MATCHED THEN
-    UPDATE SET
-        T.GUBUN = S.GUBUN,
-        T.ATTACH_FILE = S.ATTACH_FILE,
-        T.COUNTRY = S.COUNTRY,
-        T.RECEIPT_TYPE = S.RECEIPT_TYPE,
-        T.MERCHANT_NAME = S.MERCHANT_NAME,
-        T.MERCHANT_PHONE_NO = S.MERCHANT_PHONE_NO,
-        T.DELIVERY_ADDR = S.DELIVERY_ADDR,
-        T.TRANSACTION_DATE = S.TRANSACTION_DATE,
-        T.TRANSACTION_TIME = S.TRANSACTION_TIME,
-        T.TOTAL_AMOUNT = S.TOTAL_AMOUNT,
-        T.SUMTOTAL_AMOUNT = S.SUMTOTAL_AMOUNT,
-        T.TAX_AMOUNT = S.TAX_AMOUNT,
-        T.BIZ_NO = S.BIZ_NO,
-        T.APPROVAL_NO = S.APPROVAL_NO,
-        T.RESULT_CODE = S.RESULT_CODE,
-        T.RESULT_MESSAGE = S.RESULT_MESSAGE,
-        T.UPDATE_DATE = CURRENT_TIMESTAMP
-WHEN NOT MATCHED THEN
-    INSERT (
-        FIID, GUBUN, LINE_INDEX, RECEIPT_INDEX, COMMON_YN, ATTACH_FILE,
-        COUNTRY, RECEIPT_TYPE, MERCHANT_NAME, MERCHANT_PHONE_NO,
-        DELIVERY_ADDR, TRANSACTION_DATE, TRANSACTION_TIME,
-        TOTAL_AMOUNT, SUMTOTAL_AMOUNT, TAX_AMOUNT, BIZ_NO, APPROVAL_NO,
-        RESULT_CODE, RESULT_MESSAGE, CREATE_DATE, UPDATE_DATE
-    )
-    VALUES (
-        S.FIID, S.GUBUN, S.LINE_INDEX, S.RECEIPT_INDEX, S.COMMON_YN, S.ATTACH_FILE,
-        S.COUNTRY, S.RECEIPT_TYPE, S.MERCHANT_NAME, S.MERCHANT_PHONE_NO,
-        S.DELIVERY_ADDR, S.TRANSACTION_DATE, S.TRANSACTION_TIME,
-        S.TOTAL_AMOUNT, S.SUMTOTAL_AMOUNT, S.TAX_AMOUNT, S.BIZ_NO, S.APPROVAL_NO,
-        S.RESULT_CODE, S.RESULT_MESSAGE, S.CREATE_DATE, CURRENT_TIMESTAMP
-    )
-""")
-
-# 실행
-conn.execute(merge_summ_sql, summary)
-
-
-# --- 기존 INSERT 아이템(sql) 루프 자리에 교체 ---
-merge_item_sql = text("""
-MERGE INTO MISADM.RPA_CCR_LINE_ITEMS AS T
-USING (
-    SELECT
-        :FIID          AS FIID,
-        :LINE_INDEX    AS LINE_INDEX,
-        :RECEIPT_INDEX AS RECEIPT_INDEX,
-        :ITEM_INDEX    AS ITEM_INDEX,
-        :ITEM_NAME     AS ITEM_NAME,
-        :ITEM_QTY      AS ITEM_QTY,
-        :ITEM_UNIT_PRICE AS ITEM_UNIT_PRICE,
-        :ITEM_TOTAL_PRICE AS ITEM_TOTAL_PRICE,
-        :CONTENTS      AS CONTENTS,
-        :COMMON_YN     AS COMMON_YN,
-        :CREATE_DATE   AS CREATE_DATE
-    FROM DUMMY
-) AS S
-ON (
-    T.FIID = S.FIID
-    AND T.LINE_INDEX = S.LINE_INDEX
-    AND T.RECEIPT_INDEX = S.RECEIPT_INDEX
-    AND T.ITEM_INDEX = S.ITEM_INDEX
-    AND T.COMMON_YN = S.COMMON_YN
-)
-WHEN MATCHED THEN
-    UPDATE SET
-        T.ITEM_NAME = S.ITEM_NAME,
-        T.ITEM_QTY = S.ITEM_QTY,
-        T.ITEM_UNIT_PRICE = S.ITEM_UNIT_PRICE,
-        T.ITEM_TOTAL_PRICE = S.ITEM_TOTAL_PRICE,
-        T.CONTENTS = S.CONTENTS,
-        T.UPDATE_DATE = CURRENT_TIMESTAMP
-WHEN NOT MATCHED THEN
-    INSERT (
-        FIID, LINE_INDEX, RECEIPT_INDEX, ITEM_INDEX,
-        ITEM_NAME, ITEM_QTY, ITEM_UNIT_PRICE, ITEM_TOTAL_PRICE,
-        CONTENTS, COMMON_YN, CREATE_DATE, UPDATE_DATE
-    )
-    VALUES (
-        S.FIID, S.LINE_INDEX, S.RECEIPT_INDEX, S.ITEM_INDEX,
-        S.ITEM_NAME, S.ITEM_QTY, S.ITEM_UNIT_PRICE, S.ITEM_TOTAL_PRICE,
-        S.CONTENTS, S.COMMON_YN, S.CREATE_DATE, CURRENT_TIMESTAMP
-    )
-""")
-
-for item in items:
-    conn.execute(merge_item_sql, item)
-
-conn.commit()
-
-
-SELECT COUNT(*) AS CNT
-FROM LDCOM_CARDFILE_LOG
-WHERE RESULT_CODE = '200'
-  AND (CONTENT IS NULL OR CONTENT = '')
-  AND UPDATE_DATE = '2025-09-30';
-
-
-import os
+import re
 import logging
-from db_master import insert_postprocessed_result
+from typing import Optional
 
-logger = logging.getLogger("BULK_INSERT")
+LOGGER = logging.getLogger("APPROVAL_EXTRACT")
 
-if __name__ == "__main__":
-    # ✅ 폴더 경로 고정
-    folder_path = r"C:\example\postprocess_output"   # 네 실제 JSON 폴더 경로로 교체
+# 라벨 패턴: 한국어/영어 변형을 폭넓게 커버하되 'Approval Number' 같은 조합 포함
+LABEL_PATTERN = re.compile(
+    r"(?:"
+    r"승인\s*(?:번호|NO|코드)"
+    r"|"
+    r"Auth(?:orization|entication)?(?:\s*(?:No|Code))?"
+    r"|"
+    r"Approval\s*(?:No|Number|Code)"
+    r")",
+    re.IGNORECASE,
+)
 
-    # ✅ DB 연결 준비 (기존 방식)
-    import tomllib
-    from sqlalchemy import create_engine
+# 값 후보 토큰: 숫자와 공백/대문자 조합.  (최종 검증은 별도 함수에서)
+VALUE_CHUNK = re.compile(r"[A-Z0-9][A-Z0-9\s]{5,20}", re.IGNORECASE)
 
-    with open("Module_config_dex.toml", "rb") as f:
-        config = tomllib.load(f)
-    hana_conf = config.get("SAP HANA DB")
+def _normalize_and_validate(token: str) -> Optional[str]:
+    """
+    공백 제거/대문자화 후 승인번호 유효성 검사:
+    - 길이: 6~12
+    - 영문/숫자만
+    - 숫자 개수 >= 5  (순수 영문 방지)
+    """
+    if not token:
+        return None
+    norm = token.replace(" ", "").upper()
 
-    conn_str = f"hdbcli://{hana_conf['User']}:{hana_conf['Password']}@{hana_conf['Host']}:{hana_conf['Port']}"
-    engine = create_engine(conn_str)
-    conn = engine.connect()
+    if not (6 <= len(norm) <= 12):
+        return None
+    if not re.fullmatch(r"[A-Z0-9]+", norm):
+        return None
 
-    duser_input = {"sqlalchemy_conn": conn}
+    digit_count = sum(c.isdigit() for c in norm)
+    if digit_count < 5:
+        return None  # 'APPROVAL' 같은 순수/과다영문 방지
 
-    # ✅ 폴더 내 JSON 파일 모두 처리
-    for fname in sorted(os.listdir(folder_path)):
-        if fname.lower().endswith(".json"):
-            json_path = os.path.join(folder_path, fname)
-            try:
-                logger.info(f"[처리 시작] {json_path}")
-                insert_postprocessed_result(json_path, duser_input)
-            except Exception as e:
-                logger.error(f"[실패] {json_path} | {e}")
+    return norm
 
-    conn.close()
+def extract_approval_no(contents: str) -> Optional[str]:
+    """
+    영수증 CONTENTS에서 승인번호를 추출.
+    - 라벨(승인번호/승인 NO/승인코드/Auth/Authorization/Approval (No|Number|Code) 등) 필수
+    - 라벨 직후(같은 줄)에서 값 탐색 → 없으면 다음 줄 탐색
+    - 값은 공백 포함 가능 (예: '1234 5678'), 검증 시 공백 제거
+    - 여러 개면 첫 번째만 반환
+    """
+    if not contents or not isinstance(contents, str):
+        return None
 
-회의록 요약
+    lines = contents.splitlines()
+    for i, line in enumerate(lines):
+        m = LABEL_PATTERN.search(line)
+        if not m:
+            continue
 
-1. RPA
-	•	세부 프로세스 관련 문의 진행.
-	•	오류 발생 시 추가 프로세스 협의 필요.
-	•	추후 논의는 청주팀과 직접 소통하기로 함.
+        # 1) 같은 줄: 라벨 "이후" 부분만 값 탐색 (라벨 단어가 값으로 오탐되는 것 방지)
+        tail = line[m.end():]
+        m_val = VALUE_CHUNK.search(tail)
+        if m_val:
+            candidate = _normalize_and_validate(m_val.group())
+            if candidate:
+                return candidate
 
-2. IDP
-	•	PDF 분할 방식: 굴뚝 단위로 분할하여 제공하기로 협의.
-	•	측정 분석 결과가 길어지는 특수 케이스도 동일하게 굴뚝 단위 문서 내 여러 페이지로 구성.
-	•	양식 정리: PDF 내 통일된 양식이 필요한 부분을 정리하여 차주까지 제공하기로 함.
-	•	OCR 테스트: 현재 샘플 3개에 대해 각각 5개씩 OCR 테스트 진행 완료 → 결과 공유 예정.
+        # 2) 다음 줄에서 값 탐색
+        if i + 1 < len(lines):
+            m_next = VALUE_CHUNK.search(lines[i + 1])
+            if m_next:
+                candidate = _normalize_and_validate(m_next.group())
+                if candidate:
+                    return candidate
 
-3. SHE
-	•	DB 설계: 마스터 부분 확인 후 서브 테이블 설계하여 공유 예정.
-	•	인터페이스 정의서: IDP 측에 요청 후 공유하기로 함.
-	•	화면 변경: 기존 엑셀 기반 방식에서 변경된 화면을 추후 공유하기로 함.
-
-4. 환경팀
-	•	오염물질명 코드 테이블: 현재 IEPS, SEMS가 상이 → 정리 후 다시 공유하기로 함.
-
-⸻
-
-📝 추가 결정 사항
-	•	앞으로 미팅에서는 진행 상황 공유를 메인으로 하고,
-질의사항은 큐브(Cube)를 통해 수시 공유하기로 함.
-	•	다음 미팅 일정: 추석 이후, 다음 주 화요일 오후 4시.
-
-
+    return None
