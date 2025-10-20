@@ -1,65 +1,36 @@
-import os
-import mimetypes
-import logging
-import requests
-
-logger = logging.getLogger("UPLOAD_REQUEST")
-logger.setLevel(logging.INFO)
-
-SUPPORTED_EXTS = {".pdf", ".jpg", ".jpeg", ".png"}
-MIME_MAP = {
-    ".pdf": "application/pdf",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png"
-}
-
-class FilePrepError(Exception):
-    """지원하지 않는 파일 확장자 등의 업로드 오류"""
-    pass
-
-
-def upload_file(in_params: dict, idp_setup_env: str):
+def estimate_elapsed_time(request_data: dict) -> dict:
     """
-    파일 확장자에 따라 MIME 타입을 지정해 업로드 요청을 수행합니다.
-    PDF / JPG / JPEG / PNG만 지원.
+    idp_items 개수에 따라 예상 소요 시간을 계산합니다.
+    - 아이템 1개당 15초 기준
 
     Parameters
     ----------
-    in_params : dict
-        {"input_file_path": "/path/to/file.pdf"}
-    idp_setup_env : str
-        업로드할 엔드포인트 URL (예: "http://10.158.xxx.xxx:8089/ocr/receipt")
+    request_data : dict
+        {
+            "systemName": "ABC",
+            "idp_items": [
+                {"ppeId": "x", "ppeSeq": "1", "url": "..."}, ...
+            ]
+        }
 
     Returns
     -------
-    response : requests.Response
-        POST 요청 결과
+    dict
+        {"elp_time": <예상 소요 시간(초)>}
     """
-    input_path = in_params.get("input_file_path")
-    if not input_path:
-        raise FilePrepError("INPUT_FILE_PATH_MISSING")
+    try:
+        # idp_items가 존재하는지 확인
+        items = request_data.get("idp_items", [])
+        if not isinstance(items, list):
+            raise ValueError("idp_items must be a list")
 
-    _, ext = os.path.splitext(input_path)
-    ext = ext.lower()
+        item_count = len(items)
+        time_per_item = 15  # 초 단위 (기준 처리 시간)
+        elp_time = item_count * time_per_item
 
-    # --- 지원 확장자 확인 ---
-    if ext not in SUPPORTED_EXTS:
-        raise FilePrepError(f"EXT_NOT_SUPPORTED: {ext}")
+        response_data = {"elp_time": elp_time}
+        return response_data
 
-    # --- MIME 타입 결정 ---
-    mime_type = MIME_MAP.get(ext) or mimetypes.guess_type(input_path)[0] or "application/octet-stream"
-
-    logger.info("Preparing upload for file: %s (MIME=%s)", input_path, mime_type)
-
-    # --- 파일 업로드 요청 ---
-    with open(input_path, "rb") as file:
-        files = {"file": (file.name, file, mime_type)}
-
-        try:
-            response = requests.post(idp_setup_env, files=files, timeout=30)
-            logger.info("Upload completed: status=%s", response.status_code)
-            return response
-        except requests.RequestException as e:
-            logger.exception("Upload failed: %s", e)
-            raise FilePrepError(f"UPLOAD_FAILED: {e}")
+    except Exception as e:
+        # 예상치 못한 오류 시 안전하게 처리
+        return {"error": f"Failed to calculate elapsed time: {e}"}
