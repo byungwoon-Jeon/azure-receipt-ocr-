@@ -1,77 +1,65 @@
-import re
+import os
+import mimetypes
 import logging
-from typing import Optional
+import requests
 
-LOGGER = logging.getLogger("APPROVAL_EXTRACT")
+logger = logging.getLogger("UPLOAD_REQUEST")
+logger.setLevel(logging.INFO)
 
-# 라벨 패턴: 한국어/영어 변형을 폭넓게 커버하되 'Approval Number' 같은 조합 포함
-LABEL_PATTERN = re.compile(
-    r"(?:"
-    r"승인\s*(?:번호|NO|코드)"
-    r"|"
-    r"Auth(?:orization|entication)?(?:\s*(?:No|Code))?"
-    r"|"
-    r"Approval\s*(?:No|Number|Code)"
-    r")",
-    re.IGNORECASE,
-)
+SUPPORTED_EXTS = {".pdf", ".jpg", ".jpeg", ".png"}
+MIME_MAP = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png"
+}
 
-# 값 후보 토큰: 숫자와 공백/대문자 조합.  (최종 검증은 별도 함수에서)
-VALUE_CHUNK = re.compile(r"[A-Z0-9][A-Z0-9\s]{5,20}", re.IGNORECASE)
+class FilePrepError(Exception):
+    """지원하지 않는 파일 확장자 등의 업로드 오류"""
+    pass
 
-def _normalize_and_validate(token: str) -> Optional[str]:
+
+def upload_file(in_params: dict, idp_setup_env: str):
     """
-    공백 제거/대문자화 후 승인번호 유효성 검사:
-    - 길이: 6~12
-    - 영문/숫자만
-    - 숫자 개수 >= 5  (순수 영문 방지)
+    파일 확장자에 따라 MIME 타입을 지정해 업로드 요청을 수행합니다.
+    PDF / JPG / JPEG / PNG만 지원.
+
+    Parameters
+    ----------
+    in_params : dict
+        {"input_file_path": "/path/to/file.pdf"}
+    idp_setup_env : str
+        업로드할 엔드포인트 URL (예: "http://10.158.xxx.xxx:8089/ocr/receipt")
+
+    Returns
+    -------
+    response : requests.Response
+        POST 요청 결과
     """
-    if not token:
-        return None
-    norm = token.replace(" ", "").upper()
+    input_path = in_params.get("input_file_path")
+    if not input_path:
+        raise FilePrepError("INPUT_FILE_PATH_MISSING")
 
-    if not (6 <= len(norm) <= 12):
-        return None
-    if not re.fullmatch(r"[A-Z0-9]+", norm):
-        return None
+    _, ext = os.path.splitext(input_path)
+    ext = ext.lower()
 
-    digit_count = sum(c.isdigit() for c in norm)
-    if digit_count < 5:
-        return None  # 'APPROVAL' 같은 순수/과다영문 방지
+    # --- 지원 확장자 확인 ---
+    if ext not in SUPPORTED_EXTS:
+        raise FilePrepError(f"EXT_NOT_SUPPORTED: {ext}")
 
-    return norm
+    # --- MIME 타입 결정 ---
+    mime_type = MIME_MAP.get(ext) or mimetypes.guess_type(input_path)[0] or "application/octet-stream"
 
-def extract_approval_no(contents: str) -> Optional[str]:
-    """
-    영수증 CONTENTS에서 승인번호를 추출.
-    - 라벨(승인번호/승인 NO/승인코드/Auth/Authorization/Approval (No|Number|Code) 등) 필수
-    - 라벨 직후(같은 줄)에서 값 탐색 → 없으면 다음 줄 탐색
-    - 값은 공백 포함 가능 (예: '1234 5678'), 검증 시 공백 제거
-    - 여러 개면 첫 번째만 반환
-    """
-    if not contents or not isinstance(contents, str):
-        return None
+    logger.info("Preparing upload for file: %s (MIME=%s)", input_path, mime_type)
 
-    lines = contents.splitlines()
-    for i, line in enumerate(lines):
-        m = LABEL_PATTERN.search(line)
-        if not m:
-            continue
+    # --- 파일 업로드 요청 ---
+    with open(input_path, "rb") as file:
+        files = {"file": (file.name, file, mime_type)}
 
-        # 1) 같은 줄: 라벨 "이후" 부분만 값 탐색 (라벨 단어가 값으로 오탐되는 것 방지)
-        tail = line[m.end():]
-        m_val = VALUE_CHUNK.search(tail)
-        if m_val:
-            candidate = _normalize_and_validate(m_val.group())
-            if candidate:
-                return candidate
-
-        # 2) 다음 줄에서 값 탐색
-        if i + 1 < len(lines):
-            m_next = VALUE_CHUNK.search(lines[i + 1])
-            if m_next:
-                candidate = _normalize_and_validate(m_next.group())
-                if candidate:
-                    return candidate
-
-    return None
+        try:
+            response = requests.post(idp_setup_env, files=files, timeout=30)
+            logger.info("Upload completed: status=%s", response.status_code)
+            return response
+        except requests.RequestException as e:
+            logger.exception("Upload failed: %s", e)
+            raise FilePrepError(f"UPLOAD_FAILED: {e}")
