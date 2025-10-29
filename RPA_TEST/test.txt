@@ -1,374 +1,148 @@
-import os
 import json
-import re
 import logging
-import traceback
-from datetime import datetime
-from typing import Optional
+from typing import List, Dict, Any
 
-logger = logging.getLogger("POST_PROCESS")
+logger = logging.getLogger(__name__)
 
-
-# =========================
-# 승인번호 추출 유틸
-# =========================
-LOGGER_EXTRACT = logging.getLogger("APPROVAL_EXTRACT")
-
-# 라벨 패턴: 한국어/영어 변형을 폭넓게 커버
-LABEL_PATTERN = re.compile(
-    r"(?:"
-    r"승인\s*(?:번호|NO|코드)"
-    r"|"
-    r"Auth(?:orization|entication)?(?:\s*(?:No|Code))?"
-    r"|"
-    r"Approval\s*(?:No|Number|Code)"
-    r")",
-    re.IGNORECASE,
-)
-
-# 값 후보: 대문자/숫자와 공백의 묶음(최종 검증은 별도)
-VALUE_CHUNK = re.compile(r"[A-Z0-9][A-Z0-9\s]{5,20}", re.IGNORECASE)
-
-
-def _normalize_and_validate(token: str) -> Optional[str]:
+def clean_value(value: Any) -> Any:
     """
-    공백 제거/대문자화 후 승인번호 유효성 검사:
-    - 길이: 6~12
-    - 문자: 영문/숫자만
-    - 숫자 개수 >= 5  (순수 영문 방지: APPROVAL, AUTHORIZATION 등)
+    사용자가 이미 가지고 있다고 한 clean_value 예시용 placeholder.
+    실제 구현은 기존 코드 그대로 쓰면 됨.
     """
-    if not token:
-        return None
-    norm = token.replace(" ", "").upper()
+    # 예: 문자열 앞뒤 공백 제거, "null" -> None 변환 등
+    if isinstance(value, str):
+        v = value.strip()
+        if v.lower() == "null":
+            return None
+        return v
+    return value
 
-    if not (6 <= len(norm) <= 12):
-        return None
-    if not re.fullmatch(r"[A-Z0-9]+", norm):
-        return None
-
-    digit_count = sum(c.isdigit() for c in norm)
-    if digit_count < 5:
-        return None
-
-    return norm
-
-
-def extract_approval_no(contents: str) -> Optional[str]:
+def deduplicate_rows_by_certification_number(
+    columns: List[str],
+    data_rows: List[List[Any]],
+    key_column_name: str = "certification_number"
+) -> List[List[Any]]:
     """
-    영수증 CONTENTS에서 승인번호를 추출.
-    - 라벨(승인번호/승인 NO/승인코드/Auth/Authorization/Approval (No|Number|Code) 등) 필수
-    - 라벨 '이후' 텍스트에서 값 탐색 → 없으면 다음 줄에서 탐색
-    - 값은 공백 포함 가능 (예: '1234 5678'), 검증 시 공백 제거
-    - 여러 개면 첫 번째만 반환
-    """
-    if not contents or not isinstance(contents, str):
-        return None
+    certification_number(기본값) 기준으로 중복되는 row를 제거한다.
+    - 첫 번째로 등장한 certification_number는 살리고
+      이후에 같은 certification_number를 가진 row들은 버린다.
+    - certification_number 값이 None이거나 존재하지 않는 경우는 전부 keep한다
+      (왜냐하면 None은 식별 불가하거나, 컬럼이 없을 수도 있으니까)
 
-    lines = contents.splitlines()
-    for i, line in enumerate(lines):
-        m = LABEL_PATTERN.search(line)
-        if not m:
+    columns: ["row_number", "page_number", ..., "certification_number", ...]
+    data_rows: [
+        [1, 1, "some string", "some string2", "09-1234", "true", None],
+        [1, 1, "some string", "some string2", "09-1234", "true", None],
+        ...
+    ]
+
+    return: 위 기준으로 필터링된 data_rows 그대로 (row는 아직 dict로 안 바꾼 상태)
+    """
+
+    # certification_number 컬럼 인덱스 찾기
+    try:
+        key_idx = columns.index(key_column_name)
+    except ValueError:
+        # 만약 certification_number라는 컬럼 자체가 없다면 그냥 원본 리턴
+        logger.warning(
+            "deduplicate_rows_by_certification_number: key column '%s' not found in columns %s. No dedup applied.",
+            key_column_name,
+            columns
+        )
+        return data_rows
+
+    seen_keys = set()
+    deduped_rows: List[List[Any]] = []
+
+    for row in data_rows:
+        # 방어: row 길이가 columns보다 짧거나 길 수 있으니 체크
+        if not isinstance(row, list):
+            logger.error("Row is not a list: %r. Skipping.", row)
+            continue
+        if key_idx >= len(row):
+            logger.error(
+                "Row %r does not have index %d for key '%s'. Keeping row (cannot dedup).",
+                row, key_idx, key_column_name
+            )
+            deduped_rows.append(row)
             continue
 
-        # 1) 같은 줄: 라벨 "이후" 텍스트에서만 값 탐색 (라벨 단어 오탐 방지)
-        tail = line[m.end():]
-        m_val = VALUE_CHUNK.search(tail)
-        if m_val:
-            candidate = _normalize_and_validate(m_val.group())
-            if candidate:
-                return candidate
+        key_val = row[key_idx]
 
-        # 2) 다음 줄에서 값 탐색
-        if i + 1 < len(lines):
-            m_next = VALUE_CHUNK.search(lines[i + 1])
-            if m_next:
-                candidate = _normalize_and_validate(m_next.group())
-                if candidate:
-                    return candidate
+        # key_val이 None이거나 빈 문자열이면 dedup하지 않고 그냥 keep
+        if key_val is None or (isinstance(key_val, str) and key_val.strip() == ""):
+            deduped_rows.append(row)
+            continue
 
-    return None
+        # 이미 본 certification_number면 skip
+        if key_val in seen_keys:
+            logger.info(
+                "Duplicate %s '%s' found. Dropping row: %r",
+                key_column_name, key_val, row
+            )
+            continue  # <- 삭제 효과
+
+        # 처음 보는 certification_number면 기록하고 keep
+        seen_keys.add(key_val)
+        deduped_rows.append(row)
+
+    return deduped_rows
 
 
-# =========================
-# 필드 구성 유틸
-# =========================
-def build_general_fields_from_summary(summary: dict) -> list:
+def process_doc_result(doc_process_result: Dict[str, Any]) -> Dict[str, Any]:
     """
-    summary 딕셔너리를 general_fields 배열로 전개.
-    page_number는 1로 고정.
+    네가 하고 있는 후처리 전체를 함수로 감쌌어.
+    1) table_fields 순회
+    2) dedup (certification_number 기준)
+    3) clean_value 적용
+    4) dict(zip(columns, row)) -> 다시 컬럼 순서대로 list로 정리
     """
-    general_fields = []
-    for k, v in summary.items():
-        general_fields.append({
-            "page_number": 1,
-            "name": k,
-            "value": v
-        })
-    return general_fields
+    table_fields = doc_process_result.get("table_fields", [])
+    if not isinstance(table_fields, list):
+        logger.error("table_fields is not a list in doc_process_result")
+        return doc_process_result
+
+    for table_field in table_fields:
+        # 방어 코드
+        if not isinstance(table_field, dict):
+            logger.error("table_field is not a dict: %r", table_field)
+            continue
+
+        columns: List[str] = table_field.get("columns", [])
+        data_rows: List[List[Any]] = table_field.get("data", [])
+
+        if not isinstance(columns, list) or not isinstance(data_rows, list):
+            logger.error("Invalid columns or data_rows format in table_field: %r", table_field)
+            continue
+
+        # 1. certification_number 중복 제거
+        data_rows = deduplicate_rows_by_certification_number(columns, data_rows)
+
+        # 2. clean + dict(zip(...)) + 다시 list화
+        cleaned_rows: List[List[Any]] = []
+        for idx, data_row in enumerate(data_rows):
+            # 값 클린
+            for i in range(len(data_row)):
+                data_row[i] = clean_value(data_row[i])
+
+            # dict로 매핑
+            record = dict(zip(columns, data_row))
+
+            # 다시 columns 순서대로 리스트로 복원
+            cleaned_rows.append([record.get(col) for col in columns])
+
+        # 결과를 다시 table_field에 반영
+        table_field["data"] = cleaned_rows
+        table_field["data_length"] = len(cleaned_rows)
+
+    return doc_process_result
 
 
-TABLE_COLUMNS = [
-    "FIID",
-    "LINE_INDEX",
-    "RECEIPT_INDEX",
-    "ITEM_INDEX",
-    "ITEM_NAME",
-    "ITEM_QTY",
-    "ITEM_UNIT_PRICE",
-    "ITEM_TOTAL_PRICE",
-    "COMMON_YN",
-    "CREATE_DATE",
-    "UPDATE_DATE",
-]
-
-
-def build_table_fields_from_items(items: list, table_name: str = "table1") -> list:
-    """
-    items 리스트를 지정된 컬럼 순서(TABLE_COLUMNS)에 맞춰 2차원 배열로 변환.
-    """
-    data_rows = []
-    for it in items:
-        row = [
-            it.get("FIID"),
-            it.get("LINE_INDEX"),
-            it.get("RECEIPT_INDEX"),
-            it.get("ITEM_INDEX"),
-            it.get("ITEM_NAME"),
-            it.get("ITEM_QTY"),
-            it.get("ITEM_UNIT_PRICE"),
-            it.get("ITEM_TOTAL_PRICE"),
-            it.get("COMMON_YN"),
-            it.get("CREATE_DATE"),
-            it.get("UPDATE_DATE"),
-        ]
-        data_rows.append(row)
-
-    table_obj = {
-        "table_name": table_name,
-        "columns": TABLE_COLUMNS[:],
-        "data": data_rows,
-        "data_length": len(data_rows),
-    }
-    return [table_obj]
-
-
-# =========================
-# 메인 후처리 함수
-# =========================
-def post_process_and_save(duser_input: dict, record: dict) -> str:
-    """
-    Azure OCR 결과 JSON 데이터를 후처리하여 요약(summary) 정보와 항목(item) 리스트를 추출하고,
-    후처리 JSON(result_json)에 general_fields / table_fields를 추가하여 저장.
-    또한 OCR 원본(data)을 mongo_data용으로 별도 저장하면서, 동일한 general_fields / table_fields도 추가한다.
-
-    입력:
-    - duser_input (dict): 필수키
-        - postprocess_output_dir: 후처리 JSON 저장 폴더
-        - error_json_dir: 에러 JSON 저장 폴더(옵션, 기본 ./error_json)
-        - mongo_output_dir: OCR 원본을 증강 저장할 폴더(옵션, 기본 ./mongo_data)
-    - record (dict): 필수키
-        - json_path, FIID, LINE_INDEX, RECEIPT_INDEX, COMMON_YN
-        - (선택) CONTENTS: 승인번호용 원문
-
-    반환:
-    - str: 생성된 후처리 결과 JSON 파일의 경로
-    """
-    logger.info("[시작] post_process_and_save")
-
-    try:
-        # 필수 입력값 검사
-        assert "postprocess_output_dir" in duser_input, "[ERROR] 'postprocess_output_dir' 미지정"
-        for key in ["json_path", "FIID", "LINE_INDEX", "RECEIPT_INDEX", "COMMON_YN"]:
-            assert key in record, f"[ERROR] '{key}' 필드 없음"
-
-        json_path = record["json_path"]
-        output_dir = duser_input["postprocess_output_dir"]
-        mongo_output_dir = duser_input.get("mongo_output_dir", "./mongo_data")
-        os.makedirs(output_dir, exist_ok=True)
-        os.makedirs(mongo_output_dir, exist_ok=True)
-
-        if not os.path.exists(json_path):
-            raise FileNotFoundError(f"OCR JSON 파일이 존재하지 않음: {json_path}")
-
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Form Recognizer 표준 구조 가정
-        doc = data.get("analyzeResult", {}).get("documents", [{}])[0]
-        fields = doc.get("fields", {}) if isinstance(doc, dict) else {}
-
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        fiid = record["FIID"]
-        line_index = record["LINE_INDEX"]
-        receipt_index = record["RECEIPT_INDEX"]
-        common_yn = record["COMMON_YN"]
-        attach_file = record.get("ATTACH_FILE")
-        gubun = record.get("GUBUN")
-
-        # 요약 영역
-        summary = {
-            "FIID": fiid,
-            "LINE_INDEX": line_index,
-            "RECEIPT_INDEX": receipt_index,
-            "COMMON_YN": common_yn,
-            "GUBUN": gubun,
-            "ATTACH_FILE": attach_file,
-            "COUNTRY": fields.get("CountryRegion", {}).get("valueCountryRegion"),
-            "RECEIPT_TYPE": fields.get("MerchantCategory", {}).get("valueString"),
-            "MERCHANT_NAME": fields.get("MerchantName", {}).get("valueString"),
-            "MERCHANT_PHONE_NO": fields.get("MerchantPhoneNumber", {}).get("valueString"),
-            "DELIVERY_ADDR": None,
-            "TRANSACTION_DATE": fields.get("TransactionDate", {}).get("valueDate"),
-            "TRANSACTION_TIME": fields.get("TransactionTime", {}).get("valueTime"),
-            "TOTAL_AMOUNT": str(fields.get("Total", {}).get("valueCurrency", {}).get("amount")),
-            "SUMTOTAL_AMOUNT": str(fields.get("Subtotal", {}).get("valueCurrency", {}).get("amount")),
-            "TAX_AMOUNT": str(fields.get("TotalTax", {}).get("valueCurrency", {}).get("amount")),
-            "BIZ_NO": None,
-            "APPROVAL_NO": None,   # 승인번호 자리
-            "RESULT_CODE": 200,
-            "RESULT_MESSAGE": "SUCCESS",
-            "CREATE_DATE": now_str,
-            "UPDATE_DATE": now_str
-        }
-
-        # 품목 리스트
-        item_list = []
-        items_field = fields.get("Items", {})
-        if isinstance(items_field, dict) and "valueArray" in items_field:
-            for idx, item in enumerate(items_field["valueArray"], start=1):
-                obj = item.get("valueObject", {}) if item else {}
-                item_list.append({
-                    "FIID": fiid,
-                    "LINE_INDEX": line_index,
-                    "RECEIPT_INDEX": receipt_index,
-                    "ITEM_INDEX": idx,
-                    "ITEM_NAME": obj.get("Description", {}).get("valueString"),
-                    "ITEM_QTY": str(obj.get("Quantity", {}).get("valueNumber")) if obj.get("Quantity") else None,
-                    "ITEM_UNIT_PRICE": str(obj.get("Price", {}).get("valueCurrency", {}).get("amount")) if obj.get("Price") else None,
-                    "ITEM_TOTAL_PRICE": str(obj.get("TotalPrice", {}).get("valueCurrency", {}).get("amount")) if obj.get("TotalPrice") else None,
-                    "CONTENTS": json.dumps(obj, ensure_ascii=False),
-                    "COMMON_YN": common_yn,
-                    "CREATE_DATE": now_str,
-                    "UPDATE_DATE": now_str
-                })
-
-        # ✅ 승인번호 추출: record에 이미 들어있는 CONTENTS만 사용 (DB 업데이트는 하지 않음)
-        contents_src = record.get("CONTENTS")
-        if contents_src:
-            approval_no = extract_approval_no(contents_src)
-            if approval_no:
-                summary["APPROVAL_NO"] = approval_no
-
-        # ===== 구조 추가: general_fields / table_fields =====
-        general_fields = build_general_fields_from_summary(summary)
-        table_fields = build_table_fields_from_items(item_list, table_name="table1")
-
-        # ===== 후처리 결과 JSON 저장 (구조 추가 포함) =====
-        result_json = {
-            "summary": summary,
-            "items": item_list,
-            "general_fields": general_fields,
-            "table_fields": table_fields,
-        }
-
-        output_filename = f"{fiid}_{line_index}_{receipt_index}_post.json"
-        output_path = os.path.join(output_dir, output_filename)
-        with open(output_path, "w", encoding="utf-8") as out_f:
-            json.dump(result_json, out_f, ensure_ascii=False, indent=2)
-
-        # ===== OCR 원본 + 구조 추가해서 mongo_data로 별도 저장 =====
-        mongo_doc = dict(data)  # 얕은 복사(원본 보존)
-        mongo_doc["general_fields"] = general_fields
-        mongo_doc["table_fields"] = table_fields
-
-        mongo_filename = f"{fiid}_{line_index}_{receipt_index}_mongo.json"
-        mongo_path = os.path.join(mongo_output_dir, mongo_filename)
-        with open(mongo_path, "w", encoding="utf-8") as mf:
-            json.dump(mongo_doc, mf, ensure_ascii=False, indent=2)
-
-        logger.info(f"[완료] 후처리 저장: {output_path}")
-        logger.info(f"[완료] mongo_data 저장: {mongo_path}")
-        logger.info("[종료] post_process_and_save")
-        return output_path
-
-    except Exception as e:
-        logger.error(f"[ERROR] 후처리 실패: {e}")
-        traceback.print_exc()
-
-        error_dir = duser_input.get("error_json_dir", "./error_json")
-        os.makedirs(error_dir, exist_ok=True)
-        # 에러 JSON 파일 경로
-        fiid = record.get("FIID", "UNKNOWN")
-        line_index = record.get("LINE_INDEX", "NA")
-        error_path = os.path.join(error_dir, f"fail_{fiid}_{line_index}.json")
-
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        error_summary = {
-            "FIID": record.get("FIID"),
-            "LINE_INDEX": record.get("LINE_INDEX"),
-            "RECEIPT_INDEX": record.get("RECEIPT_INDEX"),
-            "COMMON_YN": record.get("COMMON_YN"),
-            "GUBUN": record.get("GUBUN"),
-            "ATTACH_FILE": record.get("ATTACH_FILE"),
-            "COUNTRY": None, "RECEIPT_TYPE": None, "MERCHANT_NAME": None, "MERCHANT_PHONE_NO": None,
-            "DELIVERY_ADDR": None, "TRANSACTION_DATE": None, "TRANSACTION_TIME": None,
-            "TOTAL_AMOUNT": None, "SUMTOTAL_AMOUNT": None, "TAX_AMOUNT": None, "BIZ_NO": None,
-            "APPROVAL_NO": None,
-            "RESULT_CODE": "POST_ERR",
-            "RESULT_MESSAGE": str(e),
-            "CREATE_DATE": now_str,
-            "UPDATE_DATE": now_str
-        }
-
-        with open(error_path, "w", encoding="utf-8") as f:
-            json.dump({"summary": error_summary, "items": [], "general_fields": [], "table_fields": []},
-                      f, ensure_ascii=False, indent=2)
-
-        return error_path
-
-
-if __name__ == "__main__":
-    from pprint import pprint
-
-    # ✅ 테스트 파라미터
-    duser_input = {
-        "postprocess_output_dir": "./test_postprocess_json",  # 후처리 결과 저장 위치
-        "error_json_dir": "./test_error_json",               # 실패 시 에러 JSON 저장 위치
-        "mongo_output_dir": "./test_mongo_data",             # OCR 원본+구조 저장 위치
-    }
-
-    # ✅ 테스트용 OCR JSON을 가진 record
-    record = {
-        "FIID": "TEST001",
-        "LINE_INDEX": 1,
-        "RECEIPT_INDEX": 1,
-        "COMMON_YN": 0,
-        "GUBUN": "Y",
-        "ATTACH_FILE": "https://dummy-url/receipt.png",
-        "json_path": "./test_ocr_json/sample_receipt.ocr.json",  # 실제 OCR JSON 경로로 교체
-        # CONTENTS가 DB 원문이라면 여기 넣어 테스트
-        "CONTENTS": "승인번호\n1234 5678\n다른 내용들...\nAuthorization code:\n213511"
-    }
-
-    try:
-        print("🧪 post_process_and_save() 테스트 시작")
-        output_path = post_process_and_save(duser_input, record)
-
-        print(f"\n📁 생성된 파일 경로: {output_path}")
-        with open(output_path, "r", encoding="utf-8") as f:
-            result_data = json.load(f)
-            print("\n📄 요약 데이터:")
-            pprint(result_data["summary"])
-            print("\n🧩 general_fields (일부):")
-            pprint(result_data["general_fields"][:5])
-            print("\n📦 table_fields schema:")
-            pprint(result_data["table_fields"][0]["columns"])
-            print("\n📊 table_fields rows (최대 2개):")
-            pprint(result_data["table_fields"][0]["data"][:2])
-
-        # mongo_data 파일도 확인
-        mongo_path = os.path.join(duser_input["mongo_output_dir"], "TEST001_1_1_mongo.json")
-        if os.path.exists(mongo_path):
-            print(f"\n🗄 mongo_data 파일: {mongo_path}")
-    except Exception as e:
-        print(f"\n❌ 테스트 실패: {e}")
+# 사용 예시
+# with open("input.json", "r", encoding="utf-8") as f:
+#     doc_process_result = json.load(f)
+#
+# processed = process_doc_result(doc_process_result)
+#
+# with open("output.json", "w", encoding="utf-8") as f:
+#     json.dump(processed, f, ensure_ascii=False, indent=2)
