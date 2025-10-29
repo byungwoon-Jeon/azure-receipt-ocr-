@@ -1,148 +1,38 @@
-import json
-import logging
-from typing import List, Dict, Any
-
-logger = logging.getLogger(__name__)
-
-def clean_value(value: Any) -> Any:
+def deduplicate_rows_by_certification_number(columns, data_rows):
     """
-    사용자가 이미 가지고 있다고 한 clean_value 예시용 placeholder.
-    실제 구현은 기존 코드 그대로 쓰면 됨.
+    certification_number 기준으로 중복 row 제거.
+    - 첫 번째만 keep
+    - 그 이후 동일 certification_number면 drop
+    - certification_number 값이 없거나 ""/None이면 dedup 안 하고 그냥 keep
     """
-    # 예: 문자열 앞뒤 공백 제거, "null" -> None 변환 등
-    if isinstance(value, str):
-        v = value.strip()
-        if v.lower() == "null":
-            return None
-        return v
-    return value
+    KEY_COL = "certification_number"
 
-def deduplicate_rows_by_certification_number(
-    columns: List[str],
-    data_rows: List[List[Any]],
-    key_column_name: str = "certification_number"
-) -> List[List[Any]]:
-    """
-    certification_number(기본값) 기준으로 중복되는 row를 제거한다.
-    - 첫 번째로 등장한 certification_number는 살리고
-      이후에 같은 certification_number를 가진 row들은 버린다.
-    - certification_number 값이 None이거나 존재하지 않는 경우는 전부 keep한다
-      (왜냐하면 None은 식별 불가하거나, 컬럼이 없을 수도 있으니까)
-
-    columns: ["row_number", "page_number", ..., "certification_number", ...]
-    data_rows: [
-        [1, 1, "some string", "some string2", "09-1234", "true", None],
-        [1, 1, "some string", "some string2", "09-1234", "true", None],
-        ...
-    ]
-
-    return: 위 기준으로 필터링된 data_rows 그대로 (row는 아직 dict로 안 바꾼 상태)
-    """
-
-    # certification_number 컬럼 인덱스 찾기
-    try:
-        key_idx = columns.index(key_column_name)
-    except ValueError:
-        # 만약 certification_number라는 컬럼 자체가 없다면 그냥 원본 리턴
-        logger.warning(
-            "deduplicate_rows_by_certification_number: key column '%s' not found in columns %s. No dedup applied.",
-            key_column_name,
-            columns
-        )
+    if KEY_COL not in columns:
+        # 컬럼 자체가 없으면 그냥 원본 반환
         return data_rows
 
-    seen_keys = set()
-    deduped_rows: List[List[Any]] = []
+    key_idx = columns.index(KEY_COL)
+    seen = set()
+    deduped = []
 
     for row in data_rows:
-        # 방어: row 길이가 columns보다 짧거나 길 수 있으니 체크
-        if not isinstance(row, list):
-            logger.error("Row is not a list: %r. Skipping.", row)
-            continue
-        if key_idx >= len(row):
-            logger.error(
-                "Row %r does not have index %d for key '%s'. Keeping row (cannot dedup).",
-                row, key_idx, key_column_name
-            )
-            deduped_rows.append(row)
+        # 방어: row 길이가 columns보다 짧을 수도 있으니 체크
+        if not isinstance(row, list) or key_idx >= len(row):
+            deduped.append(row)
             continue
 
-        key_val = row[key_idx]
+        cert_val = row[key_idx]
 
-        # key_val이 None이거나 빈 문자열이면 dedup하지 않고 그냥 keep
-        if key_val is None or (isinstance(key_val, str) and key_val.strip() == ""):
-            deduped_rows.append(row)
+        # None이나 빈 문자열은 유일 취급 (즉 그냥 keep)
+        if cert_val is None or (isinstance(cert_val, str) and cert_val.strip() == ""):
+            deduped.append(row)
             continue
 
-        # 이미 본 certification_number면 skip
-        if key_val in seen_keys:
-            logger.info(
-                "Duplicate %s '%s' found. Dropping row: %r",
-                key_column_name, key_val, row
-            )
-            continue  # <- 삭제 효과
-
-        # 처음 보는 certification_number면 기록하고 keep
-        seen_keys.add(key_val)
-        deduped_rows.append(row)
-
-    return deduped_rows
-
-
-def process_doc_result(doc_process_result: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    네가 하고 있는 후처리 전체를 함수로 감쌌어.
-    1) table_fields 순회
-    2) dedup (certification_number 기준)
-    3) clean_value 적용
-    4) dict(zip(columns, row)) -> 다시 컬럼 순서대로 list로 정리
-    """
-    table_fields = doc_process_result.get("table_fields", [])
-    if not isinstance(table_fields, list):
-        logger.error("table_fields is not a list in doc_process_result")
-        return doc_process_result
-
-    for table_field in table_fields:
-        # 방어 코드
-        if not isinstance(table_field, dict):
-            logger.error("table_field is not a dict: %r", table_field)
+        if cert_val in seen:
+            # 이미 본 certification_number -> drop
             continue
 
-        columns: List[str] = table_field.get("columns", [])
-        data_rows: List[List[Any]] = table_field.get("data", [])
+        seen.add(cert_val)
+        deduped.append(row)
 
-        if not isinstance(columns, list) or not isinstance(data_rows, list):
-            logger.error("Invalid columns or data_rows format in table_field: %r", table_field)
-            continue
-
-        # 1. certification_number 중복 제거
-        data_rows = deduplicate_rows_by_certification_number(columns, data_rows)
-
-        # 2. clean + dict(zip(...)) + 다시 list화
-        cleaned_rows: List[List[Any]] = []
-        for idx, data_row in enumerate(data_rows):
-            # 값 클린
-            for i in range(len(data_row)):
-                data_row[i] = clean_value(data_row[i])
-
-            # dict로 매핑
-            record = dict(zip(columns, data_row))
-
-            # 다시 columns 순서대로 리스트로 복원
-            cleaned_rows.append([record.get(col) for col in columns])
-
-        # 결과를 다시 table_field에 반영
-        table_field["data"] = cleaned_rows
-        table_field["data_length"] = len(cleaned_rows)
-
-    return doc_process_result
-
-
-# 사용 예시
-# with open("input.json", "r", encoding="utf-8") as f:
-#     doc_process_result = json.load(f)
-#
-# processed = process_doc_result(doc_process_result)
-#
-# with open("output.json", "w", encoding="utf-8") as f:
-#     json.dump(processed, f, ensure_ascii=False, indent=2)
+    return deduped
