@@ -1,1 +1,3 @@
 echo | openssl s_client -showcerts -connect <너_azure_endpoint_호스트명>:443 2>/dev/null | openssl x509 -noout -subject -issuer
+
+echo | openssl s_client -showcerts -connect <endpoint>:443 | grep issuer
