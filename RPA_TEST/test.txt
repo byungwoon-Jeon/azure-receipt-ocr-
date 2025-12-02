@@ -1,23 +1,17 @@
-import json
+# 특정 문장이 텍스트 파일에서 몇 번 등장하는지 카운트하는 코드
 
-def split_json_simple(input_json, chunk_size=10):
-    with open(input_json, "r", encoding="utf-8") as f:
-        data = json.load(f)
+def count_phrase_in_file(file_path: str, phrase: str) -> int:
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        return text.count(phrase)
+    except Exception as e:
+        print(f"Error: {e}")
+        return 0
 
-    items = data["items"]
-    systemName = data.get("systemName", "A")
+# 사용 예시
+file_path = "sample.txt"
+phrase = "찾을문장"
 
-    for i in range(0, len(items), chunk_size):
-        chunk = items[i:i+chunk_size]
-        part_num = (i // chunk_size) + 1
-
-        out = {
-            "systemName": systemName,
-            "items": chunk
-        }
-
-        out_name = f"result_part{part_num}.json"
-        with open(out_name, "w", encoding="utf-8") as f:
-            json.dump(out, f, ensure_ascii=False, indent=2)
-
-        print(f"{out_name} 생성됨 (items {i+1} ~ {i+len(chunk)})")
+count = count_phrase_in_file(file_path, phrase)
+print(f"'{phrase}' 은(는) {count}번 등장합니다.")
