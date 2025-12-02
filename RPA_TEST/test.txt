@@ -15,3 +15,5 @@ phrase = "찾을문장"
 
 count = count_phrase_in_file(file_path, phrase)
 print(f"'{phrase}' 은(는) {count}번 등장합니다.")
+
+Only output the Business Management Number. If the number is not clearly identified, return an empty value. Do not guess or infer.”
