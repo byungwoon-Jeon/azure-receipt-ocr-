@@ -1,6 +1,17 @@
-echo | openssl s_client -showcerts -connect <너_azure_endpoint_호스트명>:443 2>/dev/null | openssl x509 -noout -subject -issuer
+# 특정 문장이 텍스트 파일에서 몇 번 등장하는지 카운트하는 코드
 
-echo | openssl s_client -showcerts -connect <endpoint>:443 | grep issuer
+def count_phrase_in_file(file_path: str, phrase: str) -> int:
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        return text.count(phrase)
+    except Exception as e:
+        print(f"Error: {e}")
+        return 0
 
-export CURL_CA_BUNDLE=/mnt/nas/hynix_rootCA.crt
-curl -v https://<endpoint>/
+# 사용 예시
+file_path = "sample.txt"
+phrase = "찾을문장"
+
+count = count_phrase_in_file(file_path, phrase)
+print(f"'{phrase}' 은(는) {count}번 등장합니다.")
