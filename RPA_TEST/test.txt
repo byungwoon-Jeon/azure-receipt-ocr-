@@ -1,13 +1,15 @@
-A health examination document may contain multiple pages, and each page may appear to contain a separate table.  
-However, these tables are NOT separate. They are simply different page segments of ONE single table that belongs to ONE person.
+A health checkup document naturally contains multiple tables across multiple pages.  
+It is normal for several tables to appear, and this does NOT mean the document contains multiple cases or multiple persons.
 
-Therefore, even if multiple tables are detected across different pages,  
-you must NOT treat them as separate tables and you must NOT extract them individually.
+Even though multiple tables physically exist, they all belong to the same single health checkup record.  
+Therefore, you must NOT extract each table separately or produce multiple rows of data.
 
-You must treat the entire document — across all pages — as ONE unified table.
+You must treat the entire document — including all pages and all tables — as ONE unified information set.  
+From this unified document, you must extract ONLY ONE representative row of data.
 
-table_fields must represent only this single unified table.  
-table_fields.data must contain exactly ONE row, not multiple rows.
+table_fields.data must always contain exactly ONE row.  
+Multiple tables in the document do NOT justify generating multiple rows.  
+Never create more than one row, even if multiple tables appear.
 
-Multiple pages or multiple visual table segments do NOT indicate multiple tables.  
-They are all parts of the same table for a single person.
+If multiple dates related to document creation appear, select only ONE representative date:  
+the earliest or the first occurring date in the document.
