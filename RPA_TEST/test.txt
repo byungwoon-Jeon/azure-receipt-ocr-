@@ -1,29 +1,13 @@
-Before analyzing the document, you must understand the typical structure of a health examination record.
+A health examination document may contain multiple pages, and each page may appear to contain a separate table.  
+However, these tables are NOT separate. They are simply different page segments of ONE single table that belongs to ONE person.
 
-### Normal (Valid) Structure – Single Person:
-A normal health examination document contains information for EXACTLY ONE person.
-However, this information may span MULTIPLE PAGES.
-For example:
-- Page 1 may contain personal information and test summary.
-- Page 2–5 may contain detailed test results.
-- Page 6 may contain additional measurements.
-Even if the information appears on multiple pages, it all belongs to the SAME person.
+Therefore, even if multiple tables are detected across different pages,  
+you must NOT treat them as separate tables and you must NOT extract them individually.
 
-This is the normal and valid format.
+You must treat the entire document — across all pages — as ONE unified table.
 
-### Abnormal (Invalid) Structure – Multiple Persons:
-A document is considered invalid for extraction if:
-- A single page contains a table listing MULTIPLE people simultaneously.
-  Example: a table with several names and several sets of health results.
-- Or multiple pages each contain multiple-person tables.
-- Or personal identifiers clearly belong to different individuals.
+table_fields must represent only this single unified table.  
+table_fields.data must contain exactly ONE row, not multiple rows.
 
-In such cases, the document contains information for MORE THAN ONE person, and no data should be extracted.
-
-### Summary:
-- “One person across many pages” = VALID → extract data.
-- “Many people on the same page or across multiple pages” = INVALID → return null with fail_reason: "multiple persons detected".
-
-For a valid single-person document, the table_fields.data array must contain at most ONE row.  
-If more than one row is detected in table_fields.data for a single person,  
-you MUST treat this as an invalid table and return table_fields = null with a proper fail_reason explaining why.
+Multiple pages or multiple visual table segments do NOT indicate multiple tables.  
+They are all parts of the same table for a single person.
