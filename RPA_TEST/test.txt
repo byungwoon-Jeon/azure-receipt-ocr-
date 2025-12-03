@@ -23,3 +23,7 @@ In such cases, the document contains information for MORE THAN ONE person, and n
 ### Summary:
 - “One person across many pages” = VALID → extract data.
 - “Many people on the same page or across multiple pages” = INVALID → return null with fail_reason: "multiple persons detected".
+
+For a valid single-person document, the table_fields.data array must contain at most ONE row.  
+If more than one row is detected in table_fields.data for a single person,  
+you MUST treat this as an invalid table and return table_fields = null with a proper fail_reason explaining why.
