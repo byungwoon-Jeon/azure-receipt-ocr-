@@ -1,19 +1,44 @@
-# 특정 문장이 텍스트 파일에서 몇 번 등장하는지 카운트하는 코드
+This document may contain health examination information for either one person or multiple persons.  
+Your first task is to accurately determine whether the document contains:
+- exactly ONE individual, or  
+- MORE THAN ONE individual.
 
-def count_phrase_in_file(file_path: str, phrase: str) -> int:
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            text = f.read()
-        return text.count(phrase)
-    except Exception as e:
-        print(f"Error: {e}")
-        return 0
+### Determination Rules:
+- If names, dates of birth, genders, or personal identifiers differ, the document contains multiple persons.  
+- If the same person’s information appears across multiple dates or multiple test entries, it is still ONE person.  
+- If the determination is ambiguous or uncertain, classify the document as MULTIPLE persons for safety.
 
-# 사용 예시
-file_path = "sample.txt"
-phrase = "찾을문장"
+### Output Rules:
 
-count = count_phrase_in_file(file_path, phrase)
-print(f"'{phrase}' 은(는) {count}번 등장합니다.")
+1) If the document contains EXACTLY ONE person:
+   - Extract the person’s health_check_data.
+   - Extract table_fields from the document.
+   - If table_fields is null, empty, unreadable, or cannot be reliably interpreted,
+     you MUST provide a clear fail_reason explaining why table_fields is null.
+     Examples of fail_reason:
+       - "table not found in document"
+       - "table exists but contains no rows"
+       - "table structure unreadable"
+       - "table layout ambiguous"
+       - "no usable table detected"
+   - fail_reason must be a human-readable explanation.
 
-Only output the Business Management Number. If the number is not clearly identified, return an empty value. Do not guess or infer.”
+2) If the document contains MORE THAN ONE person:
+   - Do NOT extract any health data.
+   - Set:
+       health_check_data = null
+       table_fields = null
+       fail_reason = "multiple persons detected"
+   - Under no circumstances should you produce any health data or table data.
+
+3) The final JSON output MUST contain the following fields:
+   - is_multi_person: true or false
+   - health_check_data
+   - table_fields
+   - fail_reason
+
+4) Never mix data from different individuals.  
+5) table_fields can represent only one table. If multiple persons are detected, table_fields must always be null.  
+6) If table_fields is not null, include row counts or data_length when applicable.
+
+Be strict and consistent with these rules.
