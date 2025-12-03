@@ -1,44 +1,25 @@
-This document may contain health examination information for either one person or multiple persons.  
-Your first task is to accurately determine whether the document contains:
-- exactly ONE individual, or  
-- MORE THAN ONE individual.
+Before analyzing the document, you must understand the typical structure of a health examination record.
 
-### Determination Rules:
-- If names, dates of birth, genders, or personal identifiers differ, the document contains multiple persons.  
-- If the same person’s information appears across multiple dates or multiple test entries, it is still ONE person.  
-- If the determination is ambiguous or uncertain, classify the document as MULTIPLE persons for safety.
+### Normal (Valid) Structure – Single Person:
+A normal health examination document contains information for EXACTLY ONE person.
+However, this information may span MULTIPLE PAGES.
+For example:
+- Page 1 may contain personal information and test summary.
+- Page 2–5 may contain detailed test results.
+- Page 6 may contain additional measurements.
+Even if the information appears on multiple pages, it all belongs to the SAME person.
 
-### Output Rules:
+This is the normal and valid format.
 
-1) If the document contains EXACTLY ONE person:
-   - Extract the person’s health_check_data.
-   - Extract table_fields from the document.
-   - If table_fields is null, empty, unreadable, or cannot be reliably interpreted,
-     you MUST provide a clear fail_reason explaining why table_fields is null.
-     Examples of fail_reason:
-       - "table not found in document"
-       - "table exists but contains no rows"
-       - "table structure unreadable"
-       - "table layout ambiguous"
-       - "no usable table detected"
-   - fail_reason must be a human-readable explanation.
+### Abnormal (Invalid) Structure – Multiple Persons:
+A document is considered invalid for extraction if:
+- A single page contains a table listing MULTIPLE people simultaneously.
+  Example: a table with several names and several sets of health results.
+- Or multiple pages each contain multiple-person tables.
+- Or personal identifiers clearly belong to different individuals.
 
-2) If the document contains MORE THAN ONE person:
-   - Do NOT extract any health data.
-   - Set:
-       health_check_data = null
-       table_fields = null
-       fail_reason = "multiple persons detected"
-   - Under no circumstances should you produce any health data or table data.
+In such cases, the document contains information for MORE THAN ONE person, and no data should be extracted.
 
-3) The final JSON output MUST contain the following fields:
-   - is_multi_person: true or false
-   - health_check_data
-   - table_fields
-   - fail_reason
-
-4) Never mix data from different individuals.  
-5) table_fields can represent only one table. If multiple persons are detected, table_fields must always be null.  
-6) If table_fields is not null, include row counts or data_length when applicable.
-
-Be strict and consistent with these rules.
+### Summary:
+- “One person across many pages” = VALID → extract data.
+- “Many people on the same page or across multiple pages” = INVALID → return null with fail_reason: "multiple persons detected".
