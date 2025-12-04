@@ -1,8 +1,11 @@
-When extracting the business_site_id, you must NEVER extract a resident registration number, birthdate-based number, or any personal identification number belonging to an individual.
+This document may contain many different dates such as examination periods, test dates, measurement timestamps, or validity periods.  
+These dates must NOT be used as the document_created_date.
 
-The business_site_id is an organization-level identifier, not a personal identifier.  
-It must not resemble a Korean resident registration number (13 digits, YYMMDD format, or any similar pattern).  
-Do not output any value that follows the structure of a personal ID, birthdate, or masked personal number.
+You must identify the date that represents when the document itself was created, issued, or generated.  
+This is typically a single standalone date associated with the document header, footer, or metadata section.
 
-If the extracted value looks like a personal identification number, you must NOT use it.  
-Instead, treat it as invalid and leave business_site_id blank or null, and explain the issue in the fail_reason.
+Do NOT confuse examination periods (date ranges), test intervals, or multi-day periods with the document creation date.  
+Any date expressed as a range (e.g., "2023.01.01–2023.01.05") must be ignored for document_created_date purposes.
+
+If no explicit document creation date is found in the document,  
+you must select the most recent (latest) single date appearing in the document as the fallback document_created_date.
