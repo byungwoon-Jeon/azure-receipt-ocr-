@@ -1,1 +1,20 @@
-If a form name is present anywhere at the top of the document — whether it appears on the top-left, top-center, or top-right — you must verify that the form name matches the expected title.
+A health checkup document may contain multiple tables across different pages, and this is normal.  
+However, you must NOT treat each table or page as a separate unit.  
+The entire document — including all pages and all tables — must be processed as a single analytical unit.
+
+This document can contain two possible form types:  
+- Form 84 (general form)  
+- Form 85 (special form)
+
+The document may contain only Form 84, only Form 85, both forms, or neither form.  
+However, even if a form type appears multiple times across pages or tables,  
+you must treat each form type as if it appears only once in the entire document.
+
+Therefore:
+- If only Form 84 is present → extract exactly one row.
+- If only Form 85 is present → extract exactly one row.
+- If both Form 84 and Form 85 are present → extract exactly two rows (one per form type).
+- Rows must never be created per page or per table.
+
+In other words, the number of output rows must correspond to the number of distinct form types detected in the entire document,  
+NOT the number of tables or pages.
