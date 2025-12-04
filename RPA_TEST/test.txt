@@ -1,30 +1,15 @@
-import os
+A health checkup document naturally contains multiple tables across multiple pages.  
+It is normal for several tables to appear, and this does NOT mean the document contains multiple cases or multiple persons.
 
-def check_file_size_under_15mb(file_path, limit_mb=15):
-    """
-    파일 경로를 입력받아 파일 크기를 확인하고,
-    15MB 이하인지 판별한다.
+Even though multiple tables physically exist, they all belong to the same single health checkup record.  
+Therefore, you must NOT extract each table separately or produce multiple rows of data.
 
-    Returns:
-        size_mb (float), is_under_limit (bool)
-    """
-    if not os.path.isfile(file_path):
-        raise FileNotFoundError(f"File not found: {file_path}")
+You must treat the entire document — including all pages and all tables — as ONE unified information set.  
+From this unified document, you must extract ONLY ONE representative row of data.
 
-    size_bytes = os.path.getsize(file_path)
-    size_mb = size_bytes / (1024 * 1024)
+table_fields.data must always contain exactly ONE row.  
+Multiple tables in the document do NOT justify generating multiple rows.  
+Never create more than one row, even if multiple tables appear.
 
-    is_under_limit = size_mb <= limit_mb
-    return size_mb, is_under_limit
-
-
-# 사용 예시
-if __name__ == "__main__":
-    path = r"C:\example\test.pdf"
-    size_mb, ok = check_file_size_under_15mb(path)
-
-    print(f"File size: {size_mb:.2f} MB")
-    if ok:
-        print("✔ File size is within the 15MB limit.")
-    else:
-        print("✘ File exceeds the 15MB limit.")
+If multiple dates related to document creation appear, select only ONE representative date:  
+the earliest or the first occurring date in the document.
