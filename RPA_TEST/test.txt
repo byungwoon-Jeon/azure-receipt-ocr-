@@ -1,15 +1,8 @@
-A health checkup document naturally contains multiple tables across multiple pages.  
-It is normal for several tables to appear, and this does NOT mean the document contains multiple cases or multiple persons.
+When extracting the business_site_id, you must NEVER extract a resident registration number, birthdate-based number, or any personal identification number belonging to an individual.
 
-Even though multiple tables physically exist, they all belong to the same single health checkup record.  
-Therefore, you must NOT extract each table separately or produce multiple rows of data.
+The business_site_id is an organization-level identifier, not a personal identifier.  
+It must not resemble a Korean resident registration number (13 digits, YYMMDD format, or any similar pattern).  
+Do not output any value that follows the structure of a personal ID, birthdate, or masked personal number.
 
-You must treat the entire document — including all pages and all tables — as ONE unified information set.  
-From this unified document, you must extract ONLY ONE representative row of data.
-
-table_fields.data must always contain exactly ONE row.  
-Multiple tables in the document do NOT justify generating multiple rows.  
-Never create more than one row, even if multiple tables appear.
-
-If multiple dates related to document creation appear, select only ONE representative date:  
-the earliest or the first occurring date in the document.
+If the extracted value looks like a personal identification number, you must NOT use it.  
+Instead, treat it as invalid and leave business_site_id blank or null, and explain the issue in the fail_reason.
