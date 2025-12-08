@@ -1,10 +1,3 @@
-좋아, 이번엔 깔끔한 마크다운 형식으로 만들어줄게.
-그대로 Notion / GitHub / Confluence 에 복붙해도 깔끔하게 나와.
-
-⸻
-
-1. Preprocessing & YOLO Cropping Workflow
-
 [ 원본 이미지 (ATTACH_FILE / FILE_PATH) ]
         ↓
 download → PNG 변환 → 회전 등 기본 전처리
@@ -26,9 +19,6 @@ crop 이미지 저장 (*.png)
 results 리스트 반환
 
 
-⸻
-
-2. Doc Processing (Azure OCR) Workflow
 
 [ cropped receipt PNG ]
         ↓
@@ -46,9 +36,6 @@ result_dict 반환
 (실패 시 AZURE_ERR JSON 생성)
 
 
-⸻
-
-3. Post-processing Workflow
 
 [ OCR JSON (*.ocr.json) ]
         ↓
@@ -69,26 +56,3 @@ Items 배열 파싱 → items 리스트 생성
 오류: POST_ERR 요약 + 빈 items → fail.json 저장
 
 
-⸻
-
-4. DB Master Workflow
-
-[ postprocessing JSON ]
-        ↓
-load JSON from file
-        ↓
-extract summary & items
-        ↓
-INSERT INTO RPA_CCR_LINE_SUMM (summary)
-        ↓
-INSERT INTO RPA_CCR_LINE_ITEMS (items)
-   - receipt 당 N rows
-        ↓
-COMMIT
-        ↓
-DONE
-
-
-⸻
-
-필요하면 전체를 한 장에 넣은 단일 아키텍처 다이어그램 버전도 만들어줄게!
