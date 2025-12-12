@@ -1,10 +1,51 @@
-When determining whether the document is a "general form" (일반양식),
-use the following rule:
+The document may or may not explicitly state the full legal form name.
 
-If the document title, header, or any form name in the top section of the document
-contains the word "일반" (Korean) or "General",  
-then classify the document as a general form (Form 84).
+A document may be classified as “별지 제84호서식 (General Health Checkup Result Form)”
+only when one of the following sufficient conditions is satisfied.
+You must evaluate these conditions at the document level, not per page.
 
-The word "일반" does not need to match exactly;  
-it is sufficient that the document name or form name includes it anywhere within the string.  
-Partial matches such as "일반건강검진", "일반서식", or "일반양식" must also be recognized as valid.
+────────────────────────────────
+[Condition Group A — Explicit Identification]
+The document can be classified as 별지 제84호서식 if:
+- The document explicitly contains “별지 제84호서식”
+AND
+- The document title, header, or form name contains a keyword indicating a general health checkup,
+  such as “일반”, “일반건강검진”, or equivalent expressions.
+
+────────────────────────────────
+[Condition Group B — Title + Structure Based]
+If the explicit legal form name is missing, the document may still be classified as 별지 제84호서식 if:
+- The document title or header contains a keyword indicating a general health checkup
+  (e.g., “일반”, “일반건강검진”)
+AND
+- The document contains all mandatory structural elements required by the legal form, including:
+  - 사업장명 (business site name)
+  - 사업장관리번호 (business site management number)
+  - 소재지 (address)
+  - 업종 또는 업종코드
+  - 검진기관명
+  - 실시기간
+  - 총 근로자 수 (계 / 남 / 여)
+AND
+- The result tables correspond to a general health checkup
+  and do NOT include special health checkup hazard-specific sections.
+
+────────────────────────────────
+[Condition Group C — Structure-Only Fallback]
+If neither the legal form name nor the title keywords are present,
+the document may be classified as 별지 제84호서식 only if:
+- All mandatory structural elements of the legal form are present (as listed above),
+AND
+- The overall table structure and content clearly match a general health checkup result form,
+AND
+- No elements specific to special health checkups (별지 제85호서식) are detected.
+
+────────────────────────────────
+[Invalid Cases]
+The document must NOT be classified as 별지 제84호서식 if:
+- Only the legal form number is present without any supporting title keywords or structural evidence, or
+- Mandatory structural elements are missing, or
+- General and special health checkup elements are mixed or ambiguous.
+
+In such cases, the classification must be marked as undetermined or invalid,
+and an appropriate failure reason must be provided.
