@@ -1,5 +1,33 @@
-Any date expressed as a range (e.g., "2023.01.01–2023.01.05") must be ignored when determining the document_created_date.
+idp_items = ret_json["idp_items"]
 
-However, if no explicit single document creation/issue date can be found anywhere in the document,  
-you must then fall back to the available period or range dates:  
-select the most recent date, using the last (end) date of the range as the candidate document_created_date.
+fail_lines = []
+total_count = len(idp_items)
+fail_count = 0
+
+for idp_item in idp_items:
+    if not idp_item["has_error"]:
+        continue
+
+    fail_count += 1
+
+    padded_values = []
+
+    padded_values.append(pad_string(idp_item["FIID"], column_width["EM_FIID"] - 4))
+    padded_values.append(pad_string(idp_item["LINE_INDEX"], column_width["LINE_INDEX"] - 4))
+    padded_values.append(pad_string(idp_item["RECEIPT_INDEX"], column_width["EM_RECEIPT_INDEX"] - 4))
+
+    padded_has_error = pad_string("비정상", column_widths["수행결과"] - 4)
+    padded_values.append(f"[[{padded_has_error}]]")
+
+    error_message = idp_item["error_message"] or "N/A"
+    padded_error_message = pad_string(error_message, column_widths["오류메시지"] - 4)
+    padded_values.append(padded_error_message)
+
+    fail_lines.append(" ".join(padded_values))
+
+# ── 결과 메시지 구성
+if fail_lines:
+    summary_line = f"TOTAL: {total_count} | FAIL: {fail_count}"
+    final_message = "\n".join(fail_lines + ["-" * 40, summary_line])
+else:
+    final_message = None  # 또는 "ALL_OK"
