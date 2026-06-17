@@ -1,61 +1,17 @@
-import cv2
-import numpy as np
+너는 파이썬 3.9 환경에서 동작하는 오피스 문서 처리 전문가이자 백엔드 개발자야.
+아래 제공된 코드는 기존에 Excel, PPT, Word 파일 내부의 미디어 폴더를 탐색하여 '이미지만 추출' 하던 파이썬 함수야.
 
-# 1. 이미지 로드 및 전처리
-image = cv2.imread('input.jpg')
-gray  = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-blur  = cv2.GaussianBlur(gray, (5,5), 0)
+이 함수를 완전히 변경해서, 이미지를 추출하는 대신 **문서 자체를 PDF 형식으로 변환하여 저장하는 함수**로 리팩토링해줘.
 
-# 2. 에지 검출
-edges = cv2.Canny(blur, threshold1=50, threshold2=150)  # 임곗값은 이미지에 맞게 조절
+[기존 파이썬 코드 붙여넣기]
 
-# 3. 윤곽선 검출 (외곽만)
-contours, _ = cv2.findContours(edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+리팩토링 시 아래의 **비판적 요구사항 및 제약 조건**을 반드시 준수해서 코드를 작성해줘:
 
-# 4. 각 윤곽선에 대해 처리
-receipt_idx = 0
-for cnt in contours:
-    area = cv2.contourArea(cnt)
-    if area < 1000:   # 너무 작은 영역 무시 (필요시 조절)
-        continue
-    # 5. 다각형 근사
-    peri   = cv2.arcLength(cnt, True)
-    approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-    # 컨벡스 헐 적용 (윤곽의 볼록한 외곽 얻기)
-    hull = cv2.convexHull(cnt)
-    hull_area = cv2.contourArea(hull)
-    if hull_area < 1000:
-        continue
-    # 헐도 근사해서 4점 얻기 시도
-    hull_poly = cv2.approxPolyDP(hull, 0.02 * cv2.arcLength(hull, True), True)
-    corners = None
-    if len(approx) == 4:
-        corners = approx
-    elif len(hull_poly) == 4:
-        corners = hull_poly
-    else:
-        # 사각형으로 근사되지 않은 경우 bounding box 사용
-        x,y,w,h = cv2.boundingRect(cnt)
-        corners = np.array([ [x,y], [x+w, y], [x+w, y+h], [x, y+h] ], dtype=np.float32)
-    corners = corners.reshape(4,2).astype(np.float32)
-
-    # 6. 좌표 정렬 및 원근 변환
-    # (보통 좌표를 [좌상, 우상, 우하, 좌하] 순으로 정렬)
-    # OpenCV의 perspectiveTransform은 점 순서에 따라 결과가 달라지므로 정렬이 필요
-    ordered = order_points(corners)  # 좌표를 정렬하는 사용자 함수가 있다고 가정
-    (tl, tr, br, bl) = ordered
-    # 폭과 높이 계산
-    widthA  = np.linalg.norm(br - bl)
-    widthB  = np.linalg.norm(tr - tl)
-    maxW = int(max(widthA, widthB))
-    heightA = np.linalg.norm(tr - br)
-    heightB = np.linalg.norm(tl - bl)
-    maxH = int(max(heightA, heightB))
-    dst_quad = np.array([[0,0],[maxW-1,0],[maxW-1,maxH-1],[0,maxH-1]], dtype=np.float32)
-    M = cv2.getPerspectiveTransform(ordered, dst_quad)
-    warp = cv2.warpPerspective(image, M, (maxW, maxH))
-
-    # 7. 개별 이미지 저장
-    receipt_idx += 1
-    cv2.imwrite(f"receipt_{receipt_idx}.png", warp)
-    # (추가로 corners 좌표를 저장하거나 처리할 수 있음)
+1. **Excel 변환 지원 필수:** 엑셀(.xlsx) 파일도 Word(.docx), PPT(.pptx)와 마찬가지로 완벽하게 PDF로 변환될 수 있도록 구현해줘.
+2. **크로스 플랫폼(환경) 고려:** - 이 코드가 실행될 서버 환경이 Windows일 때와 Linux(Docker 등)일 때를 모두 대응할 수 있도록 구조화해줘.
+   - **Linux/Docker 환경:** `LibreOffice` CLI 명령어를 `subprocess`로 호출하는 방식을 적용해줘.
+   - **Windows 환경:** `pywin32` 라이브러리를 활용하여 MS Office API를 제어하는 방식을 적용해줘.
+3. **안정성 및 예외 처리 (Critical):**
+   - 대용량 파일 변환 시 프로세스가 멈추는(Hang) 현상을 방지하기 위해, `subprocess` 호출 시 반드시 `timeout` 처리(예: 30초)를 포함해줘.
+   - 변환 실패 시 에러 로그를 명확히 출력하고 `False`나 예외를 반환하도록 예외 처리(`try-except`)를 견고하게 짜줘.
+4. **코드 스타일:** 불필요한 수식어나 미사여구 없이, 프로덕션 환경에 바로 적용할 수 있도록 가독성이 높고 깔끔하게 구조화된 코드로 작성해줘.
