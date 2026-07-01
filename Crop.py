@@ -1,58 +1,82 @@
-요청 사항 확인: 쿠버네티스(K8s) 환경에서 구동 중인 파이썬 애플리케이션과 관련하여, 1) 서버 메모리 증량을 타당하게 요청하기 위한 객관적 근거 수집 방법과 2) 애플리케이션 내부의 메모리 누수를 탐지하기 위한 구체적인 리눅스 명령어, 트레이싱 기법, 로그 확인 방법을 요청하셨습니다. 해당 요구 사항을 100% 이해했습니다.
+요청 사항 확인: 현재 SK하이닉스 현장과 같이 외부망 및 API 접근 권한이 철저히 통제된 환경에서, 오직 파드 내부 쉘(exec) 접속 및 애플리케이션 로그만을 활용하여 1) 메모리 증량 근거를 확보하고 2) 파이썬 메모리 누수를 탐지하는 방법을 요청하셨습니다. 해당 제약 사항을 100% 이해했습니다.
 ### 핵심 요약 (결론)
- * **메모리 증량 근거:** K8s 클러스터의 OOMKilled (Exit Code 137) 발생 이력과 Cgroup 기반의 실제 컨테이너 메모리 사용량 추이 데이터가 가장 확실한 근거입니다.
- * **메모리 누수 탐지:** 리눅스 OS 레벨의 top / ps 명령어로는 누수 여부만 확인 가능하므로, 파이썬 내장 라이브러리인 tracemalloc을 활용해 코드 레벨에서 객체 단위의 메모리 할당 스냅샷을 교차 검증해야 합니다.
+ * **메모리 증량 근거:** K8s 외부 API를 쓸 수 없으므로, 파드 내부의 **Cgroup(Control Group) 파일**을 직접 읽어 컨테이너에 할당된 '메모리 한계치(Limit)' 대비 '실제 사용량(Usage)'이 100%에 도달했음을 캡처하거나 애플리케이션 로그로 남겨야 합니다.
+ * **메모리 누수 탐지:** OS 레벨 명령어(top, ps)는 순간적인 상태만 보여주므로, 파이썬 코드 내부에 tracemalloc 로직을 백그라운드 스레드로 삽입하여 **정기적인 메모리 할당 스냅샷을 표준 출력(stdout) 로그로 남기는 방식**으로 전환해야 합니다.
 > **비판적 시각에서의 문제 제기 (Risk Point)**
-> 쿠버네티스 환경에서 파드(Pod) 내부로 직접 접속(exec)하여 free -m과 같은 전통적인 리눅스 명령어를 사용하는 것은 증명 자료로 매우 부적절합니다. 해당 명령어는 컨테이너에 할당된 제한(Limit)이 아닌 노드(Host OS) 전체의 메모리를 보여줄 가능성이 높습니다. 따라서 증량 보고서에는 K8s 네이티브 명령어(kubectl)와 Cgroup 메트릭을 우선적으로 제시해야 합니다.
+> 파드 내부에서 텍스트 파일 등으로 누수 기록을 남기더라도, 실제 메모리가 가득 차서 OOM(Out Of Memory) 킬이 발생하면 **파드가 재시작되면서 내부의 임시 데이터는 모두 삭제됩니다.** 따라서 증량 근거와 누수 로그는 반드시 파드 내부 저장이 아닌, 파이썬 표준 출력(stdout) 방식을 사용하여 외부 중앙 로그 시스템에 안전하게 기록되도록 설계해야 합니다.
 > 
-### 1. 메모리 증량 근거 확보 방안
-증량 요청 보고서에는 **'현재 할당된 자원의 한계 도달 증명'**과 **'안정적 운영을 위한 필요 용량 산정'**이 포함되어야 합니다.
-**A. K8s 네이티브 로그 및 상태 확인 (가장 강력한 증거)**
-파드가 메모리 부족으로 강제 종료되었음을 증명합니다.
- * **명령어:** kubectl describe pod <파드_이름>
- * **로그 확인 포인트:** State 항목이 Terminated이고, Reason이 **OOMKilled**, Exit Code가 **137**로 기록된 부분을 캡처하여 증빙 자료로 사용합니다.
- * **명령어:** kubectl get events --sort-by='.metadata.creationTimestamp' | grep -i oom
- * **로그 확인 포인트:** 클러스터 레벨에서 파드가 메모리 제한(Limit)에 도달해 언제, 얼마나 자주 OOM 제재를 받았는지 빈도를 증명합니다.
-**B. 컨테이너 내부 리눅스 명령어 (Cgroup 기반 실제 사용량)**
- * **명령어:** 파드 내부 접속 후, cat /sys/fs/cgroup/memory/memory.usage_in_bytes (또는 cgroup v2의 경우 cat /sys/fs/cgroup/memory.current)
- * **로그 확인 포인트:** 해당 값을 바이트 단위에서 MB/GB로 환산하여, 파드의 Memory Limit 값에 근접하게 꽉 차 있다는 것을 보여줍니다.
-**C. 리소스 사용량 실시간 트레이싱**
- * **명령어:** kubectl top pod <파드_이름> --containers
- * **확인 포인트:** 트래픽이 몰리는 피크 타임에 파이썬 컨테이너의 메모리 사용량(MEMORY 항목)이 지속적으로 Limit에 근접하는 스냅샷을 여러 장 확보합니다. (단, Metrics Server가 클러스터에 설치되어 있어야 동작합니다.)
-### 2. 파이썬 메모리 누수 탐지 방안
-메모리가 부족한 원인이 '단순 용량 부족'인지 '코드 상의 누수(Leak)'인지 명확히 구분해야 합니다.
-**A. 리눅스 기반 누수 의심 탐지 (OS 레벨)**
-파드 내부 접속(kubectl exec -it <파드_이름> -- /bin/bash) 후 아래 명령어를 수행합니다.
- * **명령어:** top -p 1 (파이썬 프로세스가 PID 1로 도는 경우) 또는 top
- * **로그 확인 포인트:** **RES (Resident Set Size)** 값이 중요합니다. 애플리케이션이 유휴(Idle) 상태임에도 RES 값이 시간이 지남에 따라 지속적으로 증가하고 줄어들지 않는다면 메모리 누수를 강하게 의심할 수 있습니다.
- * **명령어:** ps -eo pid,pmem,rss,cmd --sort=-rss | head -n 5
- * **로그 확인 포인트:** 컨테이너 내에서 메모리를 가장 많이 점유하는 프로세스의 RSS(Resident Set Size, KB 단위)를 추적합니다.
-**B. 파이썬 코드 기반 정밀 트레이싱 (Application 레벨)**
-단순 로그로는 파이썬 내부의 어떤 변수나 리스트가 메모리를 잡아먹는지 알 수 없습니다. 애플리케이션 코드에 프로파일링을 삽입해야 합니다.
- * **tracemalloc 사용 (가장 권장됨):**
-   파이썬 내장 라이브러리로, 특정 시점 간의 메모리 할당 차이를 비교하여 누수 발생 위치를 추적합니다.
-   ```python
-   import tracemalloc
-   
-   # 앱 시작 시 메모리 추적 시작
-   tracemalloc.start()
-   snapshot1 = tracemalloc.take_snapshot()
-   
-   # --- 누수가 의심되는 비즈니스 로직(API 호출, 배치 작업 등) 실행 ---
-   
-   snapshot2 = tracemalloc.take_snapshot()
-   # 두 시점 간의 차이 비교
-   top_stats = snapshot2.compare_to(snapshot1, 'lineno')
-   
-   print("[ Top 10 memory consuming lines ]")
-   for stat in top_stats[:10]:
-       print(stat)
-   
-   ```
-   * **로그 확인 포인트:** 출력된 로그에서 특정 파일의 특정 라인(예: main.py:45)에 할당된 메모리 크기(KiB/MiB)가 호출될 때마다 계속 증가한다면 해당 라인이 누수 포인트입니다.
- * **memory_profiler 라이브러리:**
-   특정 함수의 라인별 메모리 사용량을 추적할 때 유용합니다. (pip install memory-profiler)
-   누수 의심 함수 위에 @profile 데코레이터를 붙인 후 실행하면, 콘솔 로그에 각 코드 라인이 실행될 때마다 메모리가 얼마나 증가(Increment)했는지 수치로 출력됩니다.
+### 1. 파드 내부에서 메모리 증량 근거 확보 방안
+free -m과 같은 명령어는 컨테이너가 아닌 호스트(노드) 전체의 메모리를 보여주므로 증거로 무효합니다. 반드시 컨테이너 제어 그룹인 cgroup 메트릭을 확인해야 합니다.
+**A. Cgroup 파일 직접 조회 (파드 쉘 접속 시)**
+파드 내부에 접속하여 다음 명령어를 실행하고, Limit 값과 Usage 값이 동일해지는(OOM 직전) 시점을 캡처하여 보고서에 첨부합니다.
+ * **Cgroup v2 환경 (최근 K8s 표준):**
+   * 할당된 최대 메모리: cat /sys/fs/cgroup/memory.max
+   * 현재 사용 중인 메모리: cat /sys/fs/cgroup/memory.current
+ * **Cgroup v1 환경:**
+   * 할당된 최대 메모리: cat /sys/fs/cgroup/memory/memory.limit_in_bytes
+   * 현재 사용 중인 메모리: cat /sys/fs/cgroup/memory/memory.usage_in_bytes
+**B. 파이썬 코드 기반 자동 로깅 (권장)**
+OOM으로 파드가 죽기 직전의 상황을 확실히 증명하기 위해, 파이썬 코드 레벨에서 메모리 사용량을 주기적으로 로깅하는 로직을 추가합니다.
+```python
+import logging
+import threading
+import time
+
+logging.basicConfig(level=logging.INFO)
+
+def log_cgroup_memory():
+    while True:
+        try:
+            # Cgroup v2 기준 (v1인 경우 경로 수정 필요)
+            with open('/sys/fs/cgroup/memory.current', 'r') as f:
+                current_mem = int(f.read().strip()) / (1024 * 1024) # MB 단위
+            with open('/sys/fs/cgroup/memory.max', 'r') as f:
+                max_mem_str = f.read().strip()
+                max_mem = "No Limit" if max_mem_str == "max" else int(max_mem_str) / (1024 * 1024)
+            
+            logging.info(f"[Memory Proof] Current: {current_mem:.2f} MB / Limit: {max_mem} MB")
+        except Exception as e:
+            pass
+        
+        time.sleep(60) # 1분 간격으로 증명 데이터 적재
+
+# 애플리케이션 시작점에 스레드 실행 추가
+threading.Thread(target=log_cgroup_memory, daemon=True).start()
+
+```
+### 2. 파드 내부에서 파이썬 메모리 누수 탐지 방안
+파드 내부에서는 kubectl top과 같은 트레이싱 도구를 쓸 수 없으므로, 파이썬의 tracemalloc 라이브러리를 활용해 로그 스트림으로 누수 지점을 쏘아 올려야 합니다.
+**A. tracemalloc 로그 자동화 스냅샷**
+메모리가 비정상적으로 증가하는 객체를 찾아내기 위해 일정 주기마다 메모리 할당 차이(Diff)를 계산합니다.
+```python
+import tracemalloc
+import logging
+import threading
+import time
+
+logging.basicConfig(level=logging.INFO)
+tracemalloc.start()
+
+def trace_memory_leak():
+    snapshot1 = tracemalloc.take_snapshot()
+    while True:
+        time.sleep(300) # 5분 간격 비교 (운영 상황에 맞게 조절)
+        snapshot2 = tracemalloc.take_snapshot()
+        
+        # 이전 스냅샷과 비교하여 가장 많이 증가한 상위 5개 라인 추출
+        top_stats = snapshot2.compare_to(snapshot1, 'lineno')
+        
+        logging.info("=== [Memory Leak Detection: Top 5] ===")
+        for stat in top_stats[:5]:
+            logging.info(stat)
+        
+        # 기준 스냅샷 갱신
+        snapshot1 = snapshot2
+
+threading.Thread(target=trace_memory_leak, daemon=True).start()
+
+```
+ * **로그 해석 방법:** 5분마다 출력되는 로그 중, 특정 파일의 특정 라인(예: data_processor.py:45)에 할당된 크기(KiB/MiB)가 시간이 지남에 따라 줄어들지 않고 계속 누적 증가한다면 해당 코드가 누수 발생 지점입니다.
 **신뢰도 점수: 9/10**
-제공된 정보는 쿠버네티스와 파이썬 생태계에서 널리 사용되는 표준 디버깅 및 프로파일링 방식입니다. 단, 현재 사용 중인 K8s 클러스터의 Cgroup 버전(v1/v2)이나 Metrics Server 설치 여부에 따라 일부 리눅스 명령어의 파일 경로가 다르거나 kubectl top 명령어 사용이 제한될 수 있어 1점을 차감했습니다. 모니터링 시스템(Prometheus/Grafana)이 이미 구성되어 있다면, 해당 대시보드의 시계열 그래프를 캡처하는 것이 위 명령어들보다 보고서 작성 시 훨씬 효과적입니다.
-현재 K8s 클러스터 내에 프로메테우스(Prometheus)나 데이터독(Datadog) 같은 시계열 기반 메트릭 수집 시스템이 구축되어 접근 가능한 상태인가요?
+클러스터 제어 권한이 없을 때 컨테이너 내부의 Cgroup 파일을 읽어 모니터링을 대체하는 것은 리눅스 컨테이너 환경의 가장 원초적이고 확실한 표준 우회 방법입니다. 단, 현재 구동 중인 K8s 노드의 OS 환경에 따라 Cgroup v1과 v2 중 어떤 것이 마운트되어 있는지 즉각적인 확인이 어려워 파일 경로 확인 작업이 선행되어야 하므로 1점 차감했습니다. 보완을 위해 파드 내부 쉘에서 ls /sys/fs/cgroup 명령어를 입력하여 현재 환경의 Cgroup 버전을 먼저 확인하시기 바랍니다.
+현재 애플리케이션에서 출력하는 이 표준 로그(stdout)들은 파드가 OOM으로 강제 종료되더라도 사후에 분석할 수 있도록 사내 중앙 로그 시스템(예: ELK, Datadog 등)에 실시간으로 수집되고 있습니까?
